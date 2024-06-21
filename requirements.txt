@@ -1,0 +1,13 @@
+soundfile
+torch
+torchvision
+torchaudio
+librosa
+albumentations
+torch_pitch_shift
+matplotlib
+tqdm
+moviepy
+noisereduce
+omegaconf~=2.0.6
+pytorch_lightning~=1.2.10
