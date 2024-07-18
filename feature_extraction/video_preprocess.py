@@ -68,5 +68,5 @@ if __name__ == '__main__':
     video_paths.sort()
 
     with Pool(args.num_worker) as p:
-        p.map(partial(pipeline, output_dir=output_dir, sr=sr, fps=fps, W=W, H=H, denosie=denoise, greatesthit=args.greatesthit), video_paths)
+        p.map(partial(pipeline, output_dir=output_dir, sr=sr, fps=fps, W=W, H=H, denoise=denoise, greatesthit=args.greatesthit), video_paths)
 
