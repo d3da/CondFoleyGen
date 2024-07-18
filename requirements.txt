@@ -2,6 +2,7 @@ soundfile
 torch
 torchvision
 torchaudio
+torchtext~=0.10
 librosa
 albumentations
 torch_pitch_shift
@@ -9,5 +10,5 @@ matplotlib
 tqdm
 moviepy
 noisereduce
-omegaconf~=2.0.6
+omegaconf==2.0.6
 pytorch_lightning~=1.2.10
