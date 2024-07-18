@@ -5,6 +5,7 @@ from multiprocessing import Pool
 from functools import partial
 import soundfile as sf
 import noisereduce as nr
+from tqdm import tqdm
 
 def execCmd(cmd):
     r = os.popen(cmd)
@@ -68,5 +69,7 @@ if __name__ == '__main__':
     video_paths.sort()
 
     with Pool(args.num_worker) as p:
-        p.map(partial(pipeline, output_dir=output_dir, sr=sr, fps=fps, W=W, H=H, denoise=denoise, greatesthit=args.greatesthit), video_paths)
+        partial_func = partial(pipeline, output_dir=output_dir, sr=sr, fps=fps, W=W, H=H, denoise=denoise, greatesthit=args.greatesthit)
+        for _ in tqdm(p.imap_unordered(partial_func, video_paths), total=len(video_paths)):
+            pass
 
