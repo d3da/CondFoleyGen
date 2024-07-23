@@ -16,13 +16,12 @@ from data import GreatestHit, get_transform3D, non_negative
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', type=str, default='data/greatesthit/greatesthit_processed')
-
+parser.add_argument('--save-dir', type=str, default='data/greatesthit/feature_r2plus1d_dim1024_15fps')
 parser.add_argument('-b', '--batch_size', default=48, type=int)
 parser.add_argument('-n', '--worker', default=16, type=int)
 parser.add_argument('--gap', default=0, type=float)
 parser.add_argument('--fps', default=15, type=float)
 
-SAVE_DIR = 'data/greatesthit/feature_r2plus1d_dim1024_15fps'
 SR = 22050
 
 class Normalize(nn.Module):
@@ -147,6 +146,6 @@ if __name__ == '__main__':
             V_INFO['start_idx'] += [int((float(t) - 0.5) * SR) for t in ct]
             V_INFO['hit_type'] += [str(t) for t in hit_type]
     V_FEAT = torch.cat(V_FEAT, dim=0)
-    torch.save(V_FEAT, os.path.join(SAVE_DIR, 'feature_r2plus1d_dim1024_15fps.pkl'))
-    json.dump(V_INFO, open(os.path.join(SAVE_DIR, 'info_r2plus1d_dim1024_15fps.json'), 'w'))
+    torch.save(V_FEAT, os.path.join(args.save_dir, 'feature_r2plus1d_dim1024_15fps.pkl'))
+    json.dump(V_INFO, open(os.path.join(args.save_dir, 'info_r2plus1d_dim1024_15fps.json'), 'w'))
 
