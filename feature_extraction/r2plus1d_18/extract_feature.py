@@ -104,6 +104,8 @@ def get_video_feature_extractor(vid_base_arch='r2plus1d_18', pretrained=False, d
 if __name__ == '__main__':
     args = parser.parse_args()
 
+    os.makedirs(args.save_dir, exist_ok=True)
+
     random.seed(0)
     torch.manual_seed(0)
     np.random.seed(0)
