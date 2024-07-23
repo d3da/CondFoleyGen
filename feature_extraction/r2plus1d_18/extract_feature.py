@@ -109,7 +109,7 @@ if __name__ == '__main__':
     torch.manual_seed(0)
     np.random.seed(0)
 
-    model = get_video_feature_extractor('resnet50', True)
+    model = get_video_feature_extractor('r2plus1d_18', True)
     # model.avgpool = nn.AdaptiveAvgPool3d((2, 1, 1))
     print(model)
     print(f'==> Training with {torch.cuda.device_count()} GPUs')
