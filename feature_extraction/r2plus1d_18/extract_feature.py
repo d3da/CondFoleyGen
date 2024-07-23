@@ -12,7 +12,7 @@ import os
 import json
 import tqdm
 
-from .data import GreatestHit, get_transform3D, non_negative
+from data import GreatestHit, get_transform3D, non_negative
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', type=str, default='data/greatesthit/greatesthit_processed')
