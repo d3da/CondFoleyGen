@@ -3,7 +3,7 @@ torch
 torchvision
 torchaudio
 torchtext~=0.6.0
-torchmetrics~=0.6.0
+torchmetrics~=0.2.0
 librosa
 albumentations
 torch_pitch_shift
@@ -12,5 +12,6 @@ tqdm
 moviepy
 noisereduce
 omegaconf==2.0.6
-pytorch_lightning~=1.4.9
+pytorch_lightning~=1.2.10
 jsonargparse[signatures]>=4.27.7
+test-tube
