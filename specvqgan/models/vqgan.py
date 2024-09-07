@@ -42,6 +42,7 @@ class VQModel(pl.LightningModule):
         self.quantize = VectorQuantizer(n_embed, embed_dim, beta=0.25)
         self.quant_conv = torch.nn.Conv2d(ddconfig["z_channels"], embed_dim, 1)
         self.post_quant_conv = torch.nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
+        self.embed_dim = embed_dim
         
         aug_list = [
             torchaudio.transforms.Spectrogram(
