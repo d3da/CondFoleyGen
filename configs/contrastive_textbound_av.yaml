@@ -1,0 +1,92 @@
+model:
+  base_learning_rate: 5e-6
+  target: specvqgan.models.contrastive.CLAVP
+  params:
+    # cond_stage_key: feature
+    # clip: 50
+    p_normalize: 1.0
+    first_stage_config:
+      target: specvqgan.models.vqgan.VQModel
+      params:
+        ckpt_path: 'logs/2022-09-11T23-55-13_greatesthit_codebook/checkpoints/last.ckpt' # e.g. 'logs/2022-09-11T23-55-13_greatesthit_codebook/checkpoints/last.ckpt'
+        embed_dim: 256
+        n_embed: 1024
+        L: 2.0
+        ddconfig:
+          double_z: false
+          z_channels: 256
+          resolution: 160
+          in_channels: 1
+          out_ch: 1
+          ch: 128
+          ch_mult: [1, 1, 2, 2, 4]
+          num_res_blocks: 2
+          attn_resolutions: [10]
+          dropout: 0.0
+        lossconfig:
+          target: specvqgan.modules.losses.DummyLoss
+    a_embedder_config:
+      target: specvqgan.models.contrastive.AudioContrastiveLatentEmbedder
+      params:
+        output_size: 512
+    # no permuter for the cond stage as the raw features is already a sequence
+    cond_stage_config:
+      target: specvqgan.modules.video_model.r2plus1d_18.r2plus1d18KeepTemp
+    v_embedder_config:
+      target: specvqgan.models.contrastive.VideoContrastiveLatentEmbedder
+      params:
+        input_size: 512
+        output_size: 512
+    l_embedder_config:
+      target: specvqgan.models.contrastive.LabelEmbedder
+
+lightning:
+  modelcheckpoint:
+    target: pytorch_lightning.callbacks.ModelCheckpoint
+    params:
+      monitor: val/loss
+      mode: min
+      save_last: True
+      save_top_k: 3
+  callbacks:
+    image_logger:
+      target: train.ImageLogger
+      params:
+        for_specs: True
+        vocoder_cfg:
+          target: train.VocoderMelGan
+          params:
+            ckpt_vocoder: './vocoder/logs/vggsound/'
+  trainer:
+    max_epochs: 50
+
+
+data:
+  target: train.ConditionedImageGreatestHitWaveModuleFromConfig
+  params:
+    batch_size: 1
+    num_workers: 0
+
+    wav_dir: 'data/greatesthit/greatesthit_processed'
+    splits_path: 'data'
+    random_crop: False
+    mel_num: 80
+    sample_rate: 22050
+    spec_crop_len: 160
+    L: 2.00
+    rand_shift: True
+
+    data_path: 'data/greatesthit/greatesthit_processed'
+
+    train:
+      target: specvqgan.data.greatesthit.CondGreatestHitWaveCondOnImageTrain
+      params:
+        dataset_cfg:
+    validation:
+      target: specvqgan.data.greatesthit.CondGreatestHitWaveCondOnImageValidation
+      params:
+        dataset_cfg:
+    test:
+      target: specvqgan.data.greatesthit.CondGreatestHitWaveCondOnImageTest
+      params:
+        dataset_cfg:
