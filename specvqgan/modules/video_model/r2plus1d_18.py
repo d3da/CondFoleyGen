@@ -64,7 +64,7 @@ class r2plus1d18KeepTemp(nn.Module):
         return c
 
     def get_input(self, batch, k, drop_cond=False):
-        x = batch[k].cuda()
+        x = batch[k] #.cuda()
         x = x.permute(0, 2, 1, 3, 4).to(memory_format=torch.contiguous_format) # (N, 3, T, 112, 112)
         T = x.shape[2]
         if drop_cond:
