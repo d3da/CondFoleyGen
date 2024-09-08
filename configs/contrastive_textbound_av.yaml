@@ -75,6 +75,7 @@ data:
     spec_crop_len: 160
     L: 2.00
     rand_shift: True
+    process_labels: True
 
     data_path: 'data/greatesthit/greatesthit_processed'
 

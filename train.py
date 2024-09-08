@@ -426,7 +426,7 @@ class ConditionedImageGreatestHitWaveModuleFromConfig(DataModuleFromConfig):
     def __init__(self, batch_size, num_workers, wav_dir=None, spec_len=None, random_crop=None, 
                 mel_num=None, spec_crop_len=None, L=None, splits_path=None, sample_rate=None,
                 data_path=None, p_outside_cond=0., p_audio_aug=0.5, rand_shift=None, train=None, validation=None, 
-                test=None, wrap=False):
+                test=None, wrap=False, process_labels=False):
         dataset_cfg = {
             'wav_dir': wav_dir, 
             'spec_len': spec_len, 
@@ -439,6 +439,7 @@ class ConditionedImageGreatestHitWaveModuleFromConfig(DataModuleFromConfig):
             'p_outside_cond': p_outside_cond, 
             'p_audio_aug': p_audio_aug,
             'rand_shift': rand_shift,
+            'process_labels': process_labels,
         }
         for name, split in {'train': train, 'validation': validation, 'test': test}.items():
             if split is not None:

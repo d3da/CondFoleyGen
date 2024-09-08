@@ -595,7 +595,8 @@ class CondGreatestHitWaveCondOnImage(torch.utils.data.Dataset):
     def __init__(self, split, wav_dir, spec_len, random_crop, mel_num, spec_crop_len,
                 L=2.0, frame_transforms=None, splits_path='./data',
                 data_path='data/greatesthit/greatesthit-process-resized',
-                p_outside_cond=0., p_audio_aug=0.5, rand_shift=True):
+                p_outside_cond=0., p_audio_aug=0.5, rand_shift=True,
+                process_labels=False, meta_path='./data/info_r2plus1d_dim1024_15fps.json'):
         super().__init__()
         self.split = split
         self.wav_dir = wav_dir
@@ -606,6 +607,30 @@ class CondGreatestHitWaveCondOnImage(torch.utils.data.Dataset):
         self.L = L
         self.rand_shift = rand_shift
         self.p_outside_cond = torch.tensor(p_outside_cond)
+        self.process_labels = process_labels
+        self.meta_path = meta_path
+
+        if self.process_labels:
+            greatesthit_meta = json.load(open(self.meta_path, 'r'))
+            unique_classes = sorted(list(set(ht for ht in greatesthit_meta['hit_type'])))
+            self.label2target = {label: target for target, label in enumerate(unique_classes)}
+            self.target2label = {target: label for label, target in self.label2target.items()}
+            self.video_idx2label = {
+                get_GH_data_identifier(greatesthit_meta['video_name'][i], greatesthit_meta['start_idx'][i]): 
+                greatesthit_meta['hit_type'][i] for i in range(len(greatesthit_meta['video_name']))
+            }
+            self.available_video_hit = list(self.video_idx2label.keys())
+            # self.video_idx2path = {
+            #     vh: os.path.join(self.specs_dir, 
+            #         vh.replace('_', '_denoised_') + '_' + self.video_idx2label[vh].replace(' ', '_') +'_mel.npy')
+            #     for vh in self.available_video_hit
+            # }
+            # for value in self.video_idx2path.values():
+            #     assert os.path.exists(value)
+            # self.video_idx2idx = {
+            #     get_GH_data_identifier(greatesthit_meta['video_name'][i], greatesthit_meta['start_idx'][i]):
+            #     i for i in range(len(greatesthit_meta['video_name']))
+            # }
 
         split_clip_ids_path = os.path.join(splits_path, f'greatesthit_{split}.json')
         if not os.path.exists(split_clip_ids_path):
@@ -723,8 +748,12 @@ class CondGreatestHitWaveCondOnImage(torch.utils.data.Dataset):
         item['file_path_feats_'] = (frame_path, start_idx)
         item['file_path_cond_feats_'] = (cond_frame_path, cond_start_idx)
 
-        item['label'] = 'None'
-        item['target'] = 'None'
+        if self.process_labels:
+            item['label'] = self.video_idx2label[video_idx]
+            item['target'] = self.label2target[item['label']]
+        else:
+            item['label'] = 'None'
+            item['target'] = 'None'
 
         return item
 
