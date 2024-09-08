@@ -155,16 +155,16 @@ class CLAVP(pl.LightningModule):
     def encode_to_z(self, x):
         quant_z, _, info = self.first_stage_model.encode(x)
         indices = info[2].view(quant_z.shape[0], -1)
-        indices = self.first_stage_permuter(indices)
+        # indices = self.first_stage_permuter(indices)
         return quant_z, indices
 
     @torch.no_grad()
     def encode_to_c(self, c):
-        if self.downsample_cond_size > -1:
-            c = F.interpolate(c, size=(self.downsample_cond_size, self.downsample_cond_size))
+        # if self.downsample_cond_size > -1:
+        #     c = F.interpolate(c, size=(self.downsample_cond_size, self.downsample_cond_size))
         quant_c, _, info = self.cond_stage_model.encode(c)
         indices = info[2].view(quant_c.shape[0], -1)
-        indices = self.cond_stage_permuter(indices)
+        # indices = self.cond_stage_permuter(indices)
         return quant_c, indices
 
     @torch.no_grad()
@@ -172,18 +172,17 @@ class CLAVP(pl.LightningModule):
         return self.label_embedder(labels)
 
     def get_input(self, key, batch):
-        print(key)
-        import pdb; pdb.set_trace()
         if isinstance(key, str):
             if key in ['feature', 'target']:
                 x = self.cond_stage_model.get_input(batch, key, drop_cond=False)
             # if batch[key] is 1D; else the batch[key] is 2D
             else:
                 x = batch[key]
-                if len(x.shape) == 3:
-                    x = x[..., None]
-                x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format)
-            if x.dtype == torch.double:
+                if hasattr(x, 'shape'):
+                    if len(x.shape) == 3:
+                        x = x[..., None]
+                    x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format)
+            if hasattr(x, 'dtype') and x.dtype == torch.double:
                 x = x.float()
         elif isinstance(key, ListConfig):
             x = self.cond_stage_model.get_input(batch, key)
@@ -217,9 +216,6 @@ class CLAVP(pl.LightningModule):
                 c = {k: v[:N] for k, v in c.items()}
             else:
                 c = c[:N]
-        # Drop additional information during training
-        if self.drop_video:
-            c[:] = 0
         return x, c, lbl
 
     def shared_step(self, batch, batch_idx):
@@ -306,11 +302,12 @@ class LatentEmbedder(nn.Module):
     def __init__(self, input_size, output_size, *args, **kwargs):
         super().__init__()
         self.ff = nn.Linear(input_size, output_size)
-        self.act = nn.ReLU()
+        self.relu = nn.ReLU()
 
     def forward(self, x):
+        # linear layer requires the input_size as the last dimension
         x = self.ff(x)
-        x = self.act(x)
+        x = self.relu(x)
         return x
 
 
@@ -318,15 +315,33 @@ class AudioContrastiveLatentEmbedder(LatentEmbedder):
     def __init__(self, input_size, output_size, *args, **kwargs):
         super().__init__(input_size, output_size, *args, **kwargs)
 
+    def forward(self, x):
+        """
+        x: batch_size, input_size, W, H
+        """
+        # print(x.shape)
+        x = x.permute(0, 2, 3, 1)
+        # import pdb; pdb.set_trace()
+        return super().forward(x)
+
 
 class VideoContrastiveLatentEmbedder(LatentEmbedder):
     def __init__(self, input_size, output_size):
         super().__init__(input_size, output_size)
 
-class LabelEmbedder(nn.Module):
-    pass
-
-    def forward(x):
-        print(x)
+    def forward(self, x):
         print(x.shape)
+        x = x.permute(0, 2, 1)
+        import pdb; pdb.set_trace()
+        return super().forward(x)
+
+
+class LabelEmbedder(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        print(x)
+        # print(x.shape)
+        return x
 
