@@ -86,7 +86,7 @@ class LB_VideoEncoder(pl.LightningModule):
         super().__init__()
 
         self.pretrained_ckpt = pretrained_ckpt
-        self.model = lb.LanguageBindVideo.from_pretrained(pretrained_ckpt, cache_dir=cache_dir)
+        self.model = lb.LanguageBindVideo.from_pretrained(pretrained_ckpt, cache_dir=cache_dir).to(device=self.device)
 
         self.model.config.vision_config.video_decode_backend = 'pytorchvideo'
 
@@ -120,14 +120,16 @@ class LB_VideoEncoder(pl.LightningModule):
         #     print(x)
         #     import pdb; pdb.set_trace()
 
-        return torch.stack([processor.image_processor(input_path,
-                                                      processor.transform,
-                                                      video_decode_backend='pytorchvideo',
-                                                      clip_start_sec=clip_start_time,
-                                                      clip_end_sec=clip_end_time,
-                                                      num_frames=None)['video']
-                            for input_path, clip_start_time, clip_end_time
-                            in zip(input_paths, clip_start_times, clip_end_times)]).to(input_paths)
+        pixel_values = [processor.image_processor(input_path,
+                        processor.transform,
+                        video_decode_backend='pytorchvideo',
+                        clip_start_sec=clip_start_time,
+                        clip_end_sec=clip_end_time,
+                        num_frames=None)['video']
+        for input_path, clip_start_time, clip_end_time
+        in zip(input_paths, clip_start_times, clip_end_times)]
+
+        return torch.stack(pixel_values).to(device=self.device)
 
 
 
@@ -136,6 +138,8 @@ class LB_AudioEncoder(pl.LightningModule):
     """
     TODO: This model also contains the CLIP text encoder, which is loaded multiple times
     May take up a lot more GPU space
+
+    TODO: take only the relevant clip from the full audio
     """
 
     def __init__(self,
@@ -148,8 +152,10 @@ class LB_AudioEncoder(pl.LightningModule):
         self.modality_transform = lb.LanguageBindAudioProcessor(self.model.config)
 
     def forward(self, input_paths):
-        input = self.modality_transform(images=input_paths)
+        input = self.modality_transform(images=input_paths).to(device=self.device)
+        print('TODO: take only the relevant part of the audio clip')
         output = self.model.vision_model(**input)[1]
+        print('output_shape:', output.shape)
         output_projected = self.model.visual_projection(output)
         # TODO Normalize the projected output? (https://github.com/PKU-YuanGroup/LanguageBind/blob/7070c53375661cdb235801176b564b45f96f0648/languagebind/__init__.py#L80)
         return output_projected
@@ -175,7 +181,7 @@ class LB_LabelEncoder(pl.LightningModule):
                                      max_length=77,
                                      padding='max_length',
                                      return_tensors='pt',
-                                     truncation=True)
+                                     truncation=True).to(device=self.device)
 
         output = self.model.text_model(**tokens_mask)[1]
         output_projected = self.model.text_projection(output)
