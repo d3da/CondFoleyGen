@@ -3,7 +3,7 @@ import os
 
 import pytorch_lightning as pl
 
-sys.path.append('/home/d3da/src/LanguageBind')
+sys.path.append(os.path.abspath('../LanguageBind'))
 
 print(sys.path)
 
