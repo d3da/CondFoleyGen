@@ -53,6 +53,16 @@ class GreatestHit(torch.utils.data.Dataset):
 
         self.dataset = []
         for video, start_ids in self.video2idx.items():
+
+            # Test if the files exist
+            video_path, audio_path = self.get_video_path(video), self.get_audio_path(video)
+            if not os.path.isfile(video_path):
+                print(f'Error: could not find video at {video_path}')
+                raise FileNotFoundError
+            if not os.path.isfile(audio_path):
+                print(f'Error: could not find audio at {audio_path}')
+                raise FileNotFoundError
+
             for idx in start_ids:
                 self.dataset.append((video, idx))
 
@@ -74,14 +84,21 @@ class GreatestHit(torch.utils.data.Dataset):
         return len(self.dataset)
 
 
+    def get_video_path(self, video):
+        return os.path.join(self.data_path, f'{video}_denoised.mp4')
+
+    def get_audio_path(self, video):
+        return os.path.join(self.data_path, f'{video}_denoised.wav')
+
+
     def __getitem__(self, i):
         """
         TODO video/audio transforms, augmentation, returning the right section of the video/audio
         """
         video, start_idx = self.dataset[i]
 
-        video_path = os.path.join(self.data_path, f'{video}_denoised.mp4')
-        audio_path = os.path.join(self.data_path, f'{video}_denoised.wav')
+        video_path = self.get_video_path(video)
+        audio_path = self.get_audio_path(video)
 
         start_time = self.idx_to_seconds(start_idx)
         end_time = start_time + self.duration
