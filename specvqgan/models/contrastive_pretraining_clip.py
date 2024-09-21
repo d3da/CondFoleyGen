@@ -127,7 +127,8 @@ class LB_VideoEncoder(pl.LightningModule):
                                                       clip_end_sec=clip_end_time,
                                                       num_frames=None)['video']
                             for input_path, clip_start_time, clip_end_time
-                            in zip(input_paths, clip_start_times, clip_end_times)])
+                            in zip(input_paths, clip_start_times, clip_end_times)]).to(input_paths)
+
 
 
     

@@ -332,7 +332,7 @@ class VideoContrastiveLatentEmbedder(LatentEmbedder):
     def forward(self, x):
         print(x.shape)
         x = x.permute(0, 2, 1)
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         return super().forward(x)
 
 
