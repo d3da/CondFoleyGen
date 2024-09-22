@@ -24,7 +24,8 @@ class ContrastivePretraining(pl.LightningModule):
                  audio_key='audio_path',
                  label_key='label',
                  start_time_key='start_time',
-                 end_time_key='end_time'):
+                 end_time_key='end_time',
+                 hit_class_key='hit_class'):
 
         super().__init__()
 
@@ -37,6 +38,7 @@ class ContrastivePretraining(pl.LightningModule):
         self.label_key = label_key
         self.start_time_key = start_time_key
         self.end_time_key = end_time_key
+        self.hit_class_key = hit_class_key
 
     def forward(self, video, audio, label, start_times, end_times):
         emb_v = self.video_encoder(video, start_times, end_times)

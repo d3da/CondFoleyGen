@@ -73,6 +73,9 @@ class GreatestHit(torch.utils.data.Dataset):
                                                strict=True)
                             if (v, int(i)) in self.dataset}
 
+        unique_classes = sorted(list(set(ht for ht in self.greatesthit_meta['hit_type'])))
+        self.label2hit_class = {label: i for i, label in enumerate(unique_classes)}
+
 
     def remove_single_hit_videos(self):
         for video, idx_list in self.video2idx.items():
@@ -104,13 +107,15 @@ class GreatestHit(torch.utils.data.Dataset):
         end_time = start_time + self.duration
 
         label = self.video2label[(video, start_idx)]
+        hit_class = self.label2hit_class[label]
 
         return dict(video_path=video_path,
                     audio_path=audio_path,
                     start_time=start_time,
                     end_time=end_time,
                     duration=self.duration,
-                    label=label)
+                    label=label,
+                    hit_class=hit_class)
 
 
     def idx_to_seconds(self, idx: int) -> float:

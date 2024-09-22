@@ -37,9 +37,8 @@ x = data.train_dataloader()
 # for batch in x:
     # model.shared_step(batch)
 
-
 trainer = pl.Trainer(accelerator="cpu")
 
 trainer.fit(model, data)
 
-import pdb; pdb.set_trace()
+# import pdb; pdb.set_trace()
