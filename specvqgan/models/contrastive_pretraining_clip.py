@@ -48,13 +48,6 @@ class ContrastivePretraining(pl.LightningModule):
         return emb_v, emb_a, emb_l
 
     def shared_step(self, batch):
-        print(batch)
-        # v = self.get_input(self.video_key, batch)
-        # a = self.get_input(self.audio_key, batch)
-        # l = self.get_input(self.label_key, batch)
-        # start_times = self.get_input(self.start_time_key, batch)
-        # end_times = self.get_input(self.end_time_key, batch)
-        # emb_v, emb_a, emb_l = self(v, a, l, start_times, end_times)
         emb_v, emb_a, emb_l = self(batch[self.video_key],
                                    batch[self.audio_key],
                                    batch[self.label_key],
@@ -93,15 +86,11 @@ class LB_VideoEncoder(pl.LightningModule):
         self.model.config.vision_config.video_decode_backend = 'pytorchvideo'
 
         self.modality_transform = lb.LanguageBindVideoProcessor(self.model.config)
-        print(self.model.config)
 
     def forward(self, input_paths, clip_start_times, clip_end_times):
         input = self.process_input_video(input_paths, clip_start_times, clip_end_times)
-        # print(input)
-        # import pdb; pdb.set_trace()
         output = self.model.vision_model(pixel_values=input)[1]
         output_projected = self.model.visual_projection(output)
-        # TODO Normalize the projected output? (https://github.com/PKU-YuanGroup/LanguageBind/blob/7070c53375661cdb235801176b564b45f96f0648/languagebind/__init__.py#L80)
         return output_projected
 
     def process_input_video(self, input_paths, clip_start_times, clip_end_times):
@@ -109,18 +98,6 @@ class LB_VideoEncoder(pl.LightningModule):
         We do this instead of using VideoProcessor.__call__ so we can supply the start and end times
         """
         processor = self.modality_transform
-        # for input_path, clip_start_time, clip_end_time in zip(input_paths, clip_start_times, clip_end_times):
-        #     print(input_path)
-        #     print(clip_start_time.item())
-        #     print(clip_end_time.item())
-        #     x = processor.image_processor(input_path,
-        #                                   processor.transform,
-        #                                   video_decode_backend='pytorchvideo',
-        #                                   clip_start_sec=clip_start_time.item(),
-        #                                   clip_end_sec=clip_end_time.item(),
-        #                                   num_frames=None)
-        #     print(x)
-        #     import pdb; pdb.set_trace()
 
         pixel_values = [processor.image_processor(input_path,
                         processor.transform,
