@@ -40,7 +40,7 @@ class ContrastivePretraining(pl.LightningModule):
 
     def forward(self, video, audio, label, start_times, end_times):
         emb_v = self.video_encoder(video, start_times, end_times)
-        emb_a = self.audio_encoder(audio)
+        emb_a = self.audio_encoder(audio, start_times, end_times)
         with torch.no_grad():
             emb_l = self.label_encoder(label)
         return emb_v, emb_a, emb_l
@@ -132,14 +132,10 @@ class LB_VideoEncoder(pl.LightningModule):
         return torch.stack(pixel_values).to(device=self.device)
 
 
-
-    
 class LB_AudioEncoder(pl.LightningModule):
     """
     TODO: This model also contains the CLIP text encoder, which is loaded multiple times
     May take up a lot more GPU space
-
-    TODO: take only the relevant clip from the full audio
     """
 
     def __init__(self,
@@ -151,15 +147,27 @@ class LB_AudioEncoder(pl.LightningModule):
         self.model = lb.LanguageBindAudio.from_pretrained(pretrained_ckpt, cache_dir=cache_dir)
         self.modality_transform = lb.LanguageBindAudioProcessor(self.model.config)
 
-    def forward(self, input_paths):
-        input = self.modality_transform(images=input_paths).to(device=self.device)
-        print('TODO: take only the relevant part of the audio clip')
-        output = self.model.vision_model(**input)[1]
-        print('output_shape:', output.shape)
+    def forward(self, input_paths, start_times, end_times):
+        input = self.process_input_audio(input_paths, start_times, end_times)
+        output = self.model.vision_model(pixel_values=input)[1]
         output_projected = self.model.visual_projection(output)
-        # TODO Normalize the projected output? (https://github.com/PKU-YuanGroup/LanguageBind/blob/7070c53375661cdb235801176b564b45f96f0648/languagebind/__init__.py#L80)
         return output_projected
-    
+
+
+    def process_input_audio(self, input_paths, start_times, end_times):
+        processor = self.modality_transform
+
+        pixel_values = []
+        for input_path, start_time, end_time in zip(input_paths, start_times, end_times):
+            waveform, sample_rate = lb.audio.processing_audio.torchaudio_loader(input_path)
+            start_frame = int(start_time * sample_rate)
+            end_frame = int(end_time * sample_rate)
+            waveform = waveform[:, start_frame : end_frame]
+
+            pixel_values.append(processor.transform((waveform, sample_rate)))
+
+        return torch.stack(pixel_values).to(device=self.device)
+
 
 class LB_LabelEncoder(pl.LightningModule):
     """
