@@ -42,6 +42,10 @@ class ContrastivePretraining(pl.LightningModule):
         self.end_time_key = end_time_key
         self.hit_class_key = hit_class_key
 
+    def configure_optimizers(self):
+        params = list(self.video_encoder.model.parameters()) + list(self.audio_encoder.model.parameters())
+        return torch.optim.Adam(params)
+
     def forward(self, video, audio, label, start_times, end_times):
         emb_v = self.video_encoder(video, start_times, end_times)
         emb_a = self.audio_encoder(audio, start_times, end_times)
