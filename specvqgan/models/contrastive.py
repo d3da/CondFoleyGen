@@ -134,9 +134,9 @@ class CLAVP(pl.LightningModule):
         audio_emb = self.audio_embedder(quant_z)
         video_emb = self.video_embedder(quant_c)
 
-        print('Shape of quant_z, quant_c: ', end='')
-        print(quant_z.shape, end=' ')
-        print(quant_c.shape)
+        # print('Shape of quant_z, quant_c: ', end='')
+        # print(quant_z.shape, end=' ')
+        # print(quant_c.shape)
         # z_indices = z_indices[:, :self.clip]
         # a_indices = z_indices
         # target includes all sequence elements (no need to handle first one

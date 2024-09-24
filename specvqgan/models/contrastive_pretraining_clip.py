@@ -2,12 +2,7 @@ import sys
 
 import pytorch_lightning as pl
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torchvision import transforms
-import torchaudio
 
-# import transformers
 import languagebind as lb
 
 sys.path.insert(0, '.')
