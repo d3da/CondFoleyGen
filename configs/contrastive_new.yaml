@@ -11,6 +11,10 @@ model:
     label_encoder_config:
       target: specvqgan.models.contrastive_pretraining_clip.LB_LabelEncoder
       params: {}
+    loss_config:
+      target: specvqgan.models.contrastive_pretraining_clip.BindToLabelEmbeddingContrastiveLoss
+      params:
+        epsilon: 2e1
 
 data:
   target: specvqgan.data.gh2.GreatestHitDataModule

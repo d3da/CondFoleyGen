@@ -140,7 +140,7 @@ class GreatestHitDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         """TODO batch_size"""
-        return torch.utils.data.DataLoader(self.train_dataset, batch_size=1)
+        return torch.utils.data.DataLoader(self.train_dataset, batch_size=2)
 
     def val_dataloader(self):
         """TODO batch_size"""
