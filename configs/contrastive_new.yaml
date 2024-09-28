@@ -1,0 +1,24 @@
+model:
+  base_learning_rate: 5e-6
+  target: specvqgan.models.contrastive_pretraining_clip.ContrastivePretraining
+  params:
+    video_encoder_config:
+      target: specvqgan.models.contrastive_pretraining_clip.LB_VideoEncoder
+      params: {}
+    audio_encoder_config:
+      target: specvqgan.models.contrastive_pretraining_clip.LB_AudioEncoder
+      params: {}
+    label_encoder_config:
+      target: specvqgan.models.contrastive_pretraining_clip.LB_LabelEncoder
+      params: {}
+    loss_config:
+      target: specvqgan.models.contrastive_pretraining_clip.BindToLabelEmbeddingContrastiveLoss
+      params:
+        epsilon: 2e1
+
+data:
+  target: specvqgan.data.gh2.GreatestHitDataModule
+  params:
+    data_path: 'data/greatesthit/vis-data'
+    splits_path: 'data'
+    metadata_path: 'data/info_r2plus1d_dim1024_15fps.json'
