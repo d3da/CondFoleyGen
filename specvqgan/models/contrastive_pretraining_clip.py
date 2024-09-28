@@ -38,7 +38,9 @@ class ContrastivePretraining(pl.LightningModule):
         self.hit_class_key = hit_class_key
 
     def configure_optimizers(self):
-        params = list(self.video_encoder.model.parameters()) + list(self.audio_encoder.model.parameters())
+        # TODO set learn rate, etc.
+        m = self.trainer.model
+        params = list(m.video_encoder.parameters()) + list(m.audio_encoder.parameters())
         return torch.optim.Adam(params)
 
     def forward(self, video, audio, label, start_times, end_times):
@@ -215,8 +217,12 @@ class LB_VideoEncoder(pl.LightningModule):
 
         self.modality_transform = lb.LanguageBindVideoProcessor(self.model.config)
 
+        self.model.text_model = None
+        self.model.text_projection = None
+
     def forward(self, input_paths, clip_start_times, clip_end_times):
-        input = self.process_input_video(input_paths, clip_start_times, clip_end_times)
+        with torch.no_grad():
+            input = self.process_input_video(input_paths, clip_start_times, clip_end_times)
         output = self.model.vision_model(pixel_values=input)[1]
         output_projected = self.model.visual_projection(output)
         return output_projected
@@ -238,6 +244,9 @@ class LB_VideoEncoder(pl.LightningModule):
 
         return torch.stack(pixel_values).to(device=self.device)
 
+    def parameters(self):
+        return list(self.model.vision_model.parameters()) + list(self.model.visual_projection.parameters())
+
 
 class LB_AudioEncoder(pl.LightningModule):
     """
@@ -254,8 +263,12 @@ class LB_AudioEncoder(pl.LightningModule):
         self.model = lb.LanguageBindAudio.from_pretrained(pretrained_ckpt, cache_dir=cache_dir)
         self.modality_transform = lb.LanguageBindAudioProcessor(self.model.config)
 
+        self.model.text_model = None
+        self.model.text_projection = None
+
     def forward(self, input_paths, start_times, end_times):
-        input = self.process_input_audio(input_paths, start_times, end_times)
+        with torch.no_grad():
+            input = self.process_input_audio(input_paths, start_times, end_times)
         output = self.model.vision_model(pixel_values=input)[1]
         output_projected = self.model.visual_projection(output)
         return output_projected
@@ -275,6 +288,9 @@ class LB_AudioEncoder(pl.LightningModule):
 
         return torch.stack(pixel_values).to(device=self.device)
 
+    def parameters(self):
+        return list(self.model.vision_model.parameters()) + list(self.model.visual_projection.parameters())
+
 
 class LB_LabelEncoder(pl.LightningModule):
     """
@@ -291,6 +307,10 @@ class LB_LabelEncoder(pl.LightningModule):
         self.model = lb.LanguageBindVideo.from_pretrained(pretrained_ckpt, cache_dir=cache_dir)
         self.tokenizer = lb.LanguageBindVideoTokenizer.from_pretrained(pretrained_ckpt, cache_dir=cache_dir)
 
+        self.model.vision_model = None
+        self.model.visual_projection = None
+
+    @torch.no_grad()
     def forward(self, text):
         tokens_mask = self.tokenizer(text,
                                      max_length=77,
