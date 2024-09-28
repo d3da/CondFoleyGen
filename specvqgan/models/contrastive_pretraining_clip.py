@@ -24,6 +24,7 @@ class ContrastivePretraining(pl.LightningModule):
                  hit_class_key='hit_class'):
 
         super().__init__()
+        self.save_hyperparameters()
 
         self.video_encoder = instantiate_from_config(video_encoder_config)
         self.audio_encoder = instantiate_from_config(audio_encoder_config)
@@ -50,23 +51,35 @@ class ContrastivePretraining(pl.LightningModule):
             emb_l = self.label_encoder(label)
         return emb_v, emb_a, emb_l
 
-    def shared_step(self, batch):
+    def shared_step(self, batch, log_prefix):
         emb_v, emb_a, emb_l = self(batch[self.video_key],
                                    batch[self.audio_key],
                                    batch[self.label_key],
                                    batch[self.start_time_key],
                                    batch[self.end_time_key])
         classes = batch[self.hit_class_key]
-        loss = self.loss_fn(emb_v, emb_a, emb_l, classes)
+        loss, partial_loss_dict = self.loss_fn(emb_v, emb_a, emb_l, classes)
 
-        return loss
+        self.log_dict({f'{log_prefix}/{k}': v.sum() for k, v in partial_loss_dict.items()},
+                      prog_bar=False,
+                      on_step=True,
+                      batch_size=classes.shape[0])
+        self.log(f'{log_prefix}/loss', loss.sum(), prog_bar=True, on_step=True, batch_size=classes.shape[0])
+
+        return loss.sum()
 
 
     def training_step(self, batch, *args, **kwargs):
-        return self.shared_step(batch)
+        loss = self.shared_step(batch, 'train')
+        return loss
 
     def validation_step(self, batch, *args, **kwargs):
-        return self.shared_step(batch)
+        loss = self.shared_step(batch, 'validation')
+        return loss
+
+    def test_step(self, batch, *args, **kwargs):
+        loss = self.shared_step(batch, 'test')
+        return loss
 
 
 class ContrastiveLoss(pl.LightningModule):
@@ -145,7 +158,16 @@ class BindToLabelEmbeddingContrastiveLoss(ContrastiveLoss):
         #             l = max(0, self.epsilon - d)
                 # print('Matrix:', matrix_loss, 'Manual:', l)
 
-        return v_loss + a_loss
+        total_loss = v_loss + a_loss
+        partial_loss_dict = dict(v_loss=v_loss,
+                                 a_loss=a_loss,
+                                 v_loss_positive=v_loss_positive,
+                                 v_loss_negative=v_loss_negative,
+                                 a_loss_positive=a_loss_positive,
+                                 a_loss_negative=a_loss_negative)
+
+        return total_loss, partial_loss_dict
+
 
 
     def similarity_matrices(self, classes):
@@ -186,9 +208,11 @@ class BindVideoAudioLoss(ContrastiveLoss):
         loss_positive = m_dist * m_sim * m_mask
         loss_negative = (self.epsilon - m_dist) * ~m_sim * m_mask
         loss_negative = loss_negative.maximum(zeros)
-        loss = (loss_positive + loss_negative)
 
-        return loss
+        total_loss = (loss_positive + loss_negative)
+        partial_loss_dict = dict(loss_positive=loss_positive,
+                                 loss_negative=loss_negative)
+        return total_loss, partial_loss_dict
 
     def similarity_matrices(self, batch_size):
         m_sim = torch.eye(batch_size, dtype=torch.bool)
