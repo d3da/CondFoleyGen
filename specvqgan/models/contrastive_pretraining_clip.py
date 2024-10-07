@@ -453,3 +453,39 @@ class LB_LabelEncoder(pl.LightningModule):
         return output_projected
 
     
+class LB_VideoEncoder_PartiallyFrozen(LB_VideoEncoder):
+    def __init__(self,
+                 n_finetune_layers: int,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Freeze the entire vision model
+        for param in self.model.vision_model.parameters():
+            param.requires_grad = False
+
+        # Unfreeze the last N encoder layers
+        for layer in self.model.vision_model.encoder.layers[-n_finetune_layers:]:
+            param.requires_grad = True
+
+        # Unfreeze the final layernorm
+        for param in self.model.vision_model.post_layernorm.parameters():
+            param.requires_grad = True
+
+
+class LB_AudioEncoder_PartiallyFrozen(LB_AudioEncoder):
+    def __init__(self,
+                 n_finetune_layers: int,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Freeze the entire vision model
+        for param in self.model.vision_model.parameters():
+            param.requires_grad = False
+
+        # Unfreeze the last N encoder layers
+        for layer in self.model.vision_model.encoder.layers[-n_finetune_layers:]:
+            param.requires_grad = True
+
+        # Unfreeze the final layernorm
+        for param in self.model.vision_model.post_layernorm.parameters():
+            param.requires_grad = True
