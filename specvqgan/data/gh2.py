@@ -95,9 +95,6 @@ class GreatestHit(torch.utils.data.Dataset):
 
 
     def __getitem__(self, i):
-        """
-        TODO video/audio transforms, augmentation, returning the right section of the video/audio
-        """
         video, start_idx = self.dataset[i]
 
         video_path = self.get_video_path(video)
@@ -125,8 +122,11 @@ class GreatestHit(torch.utils.data.Dataset):
 
 class GreatestHitDataModule(pl.LightningDataModule):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, batch_size, *args, **kwargs):
         super().__init__()
+
+        self.batch_size = batch_size
+
         self.args = args
         self.kwargs = kwargs
 
@@ -139,13 +139,10 @@ class GreatestHitDataModule(pl.LightningDataModule):
         self.test_dataset  = GreatestHit('test',  *self.args, **self.kwargs)
 
     def train_dataloader(self):
-        """TODO batch_size"""
-        return torch.utils.data.DataLoader(self.train_dataset, batch_size=2)
+        return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size)
 
     def val_dataloader(self):
-        """TODO batch_size"""
-        return torch.utils.data.DataLoader(self.val_dataset)
+        return torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size)
 
     def test_dataloader(self):
-        """TODO batch_size"""
-        return torch.utils.data.DataLoader(self.test_dataset)
+        return torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size)
