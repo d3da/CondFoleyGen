@@ -10,6 +10,111 @@ sys.path.insert(0, '.')
 from train import instantiate_from_config
 
 
+class ContrastiveSingleModality(pl.LightningModule):
+    """
+    Trains a single modality encoder (audio or video) by binding the embeddings to precomputed label embeddings.
+    Triplet loss is used
+    """
+    def __init__(self,
+                 m_encoder_config,
+                 loss_config,
+                 m_key,
+                 label_embeddings_path,
+                 start_time_key='start_time',
+                 end_time_key='end_time',
+                 hit_class_key='hit_class'):
+        super().__init__()
+        self.save_hyperparameters()
+
+        self.m_encoder = instantiate_from_config(m_encoder_config)
+        self.loss_fn = instantiate_from_config(loss_config)
+
+        self.m_key = m_key
+        self.start_time_key = start_time_key
+        self.end_time_key = end_time_key
+        self.hit_class_key = hit_class_key
+
+        # Use register_buffer so the label_embeddings tensor will be moved to the correct device
+        self.register_buffer('label_embeddings', torch.load(label_embeddings_path, weights_only=True))
+
+    def configure_optimizers(self):
+        # TODO set learn rate, etc
+        m = self.trainer.model
+        params = (p for p in m.m_encoder.parameters() if p.requires_grad)
+        return torch.optim.Adam(params)
+
+    def forward(self, m_input, start_times, end_times):
+        return self.m_encoder(m_input, start_times, end_times)
+
+    def choose_triplet(self, emb, classes):
+        """TODO: select 'hard' negative examples"""
+        total_classes = self.label_embeddings.shape[0]
+        distribution = []
+        for n in range(emb.shape[0]):
+            weights = torch.ones((total_classes), device=self.device)
+            weights[classes[n]] = 0
+            distribution.append(weights)
+
+        negative_indices = torch.multinomial(torch.stack(distribution), 1).squeeze(dim=1)
+
+        return self.label_embeddings[classes], self.label_embeddings[negative_indices]
+
+    def shared_step(self, batch, log_prefix):
+        emb = self(batch[self.m_key],
+                   batch[self.start_time_key],
+                   batch[self.end_time_key])
+        classes = batch[self.hit_class_key].to(device=self.device)
+
+        pos_emb, neg_emb = self.choose_triplet(emb, classes)
+        loss, partial_loss_dict = self.loss_fn(emb, pos_emb, neg_emb)
+
+        self.log_dict({f'{log_prefix}/{k}': v for k, v in partial_loss_dict.items()},
+                      prog_bar=False,
+                      on_step=True,
+                      batch_size=classes.shape[0])
+        self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=classes.shape[0])
+
+        return loss
+
+    def training_step(self, batch, *args, **kwargs):
+        loss = self.shared_step(batch, 'train')
+        return loss
+
+    def validation_step(self, batch, *args, **kwargs):
+        loss = self.shared_step(batch, 'validation')
+        return loss
+
+    def test_step(self, batch, *args, **kwargs):
+        loss = self.shared_step(batch, 'test')
+        return loss
+
+
+class SingleModalityTripletLoss(pl.LightningModule):
+    """
+    Given an embedding ~E, and a positive example E+ and negative example E-,
+    the loss is defined as L = max(0, ||~E - E+|| + epsilon - ||~E - E-||)
+    """
+    def __init__(self, epsilon):
+        super().__init__()
+
+        self.epsilon = epsilon
+
+    def forward(self, m_emb, pos_emb, neg_emb):
+        assert m_emb.shape == pos_emb.shape == neg_emb.shape
+
+        l_pos = (m_emb - pos_emb).square().sum(dim=1).sqrt()  # todo check dims
+        l_neg = (m_emb - neg_emb).square().sum(dim=1).sqrt()
+
+        zeros = torch.zeros_like(l_neg)
+        loss = torch.max(zeros, l_pos + self.epsilon - l_neg)
+        partial_loss_dict = dict(l_pos=l_pos.sum(),
+                                 l_neg=l_neg.sum())
+        return loss.sum(), partial_loss_dict
+
+
+
+
+
 class ContrastivePretraining(pl.LightningModule):
     def __init__(self,
                  video_encoder_config,
