@@ -15,7 +15,8 @@ from train import instantiate_from_config
 # sys.path.append(os.getcwd())
 
 # conf = OmegaConf.load('configs/contrastive_textbound_av.yaml')
-conf = OmegaConf.load('configs/contrastive_new.yaml')
+# conf = OmegaConf.load('configs/contrastive_new.yaml')
+conf = OmegaConf.load('configs/contrastive_videoonly.yaml')
 model = instantiate_from_config(conf.model)
 data = instantiate_from_config(conf.data)
 data.prepare_data()

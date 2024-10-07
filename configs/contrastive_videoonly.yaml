@@ -1,0 +1,22 @@
+
+model:
+  target: specvqgan.models.contrastive_pretraining_clip.ContrastiveSingleModality
+  params:
+    m_key: 'video_path'
+    m_encoder_config:
+      target: specvqgan.models.contrastive_pretraining_clip.LB_VideoEncoder_PartiallyFrozen
+      params:
+        n_finetune_layers: 5
+    loss_config:
+      target: specvqgan.models.contrastive_pretraining_clip.SingleModalityTripletLoss
+      params:
+        epsilon: 0.2
+    label_embeddings_path: 'data/GH_label_embeddings.pt'
+
+data:
+  target: specvqgan.data.gh2.GreatestHitDataModule
+  params:
+    data_path: 'data/greatesthit/vis-data'
+    splits_path: 'data'
+    metadata_path: 'data/info_r2plus1d_dim1024_15fps.json'
+    batch_size: 12
