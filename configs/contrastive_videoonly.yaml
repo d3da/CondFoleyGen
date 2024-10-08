@@ -20,3 +20,7 @@ data:
     splits_path: 'data'
     metadata_path: 'data/info_r2plus1d_dim1024_15fps.json'
     batch_size: 12
+    remove_single_hits: False
+    remove_none_materials: True
+    remove_none_actions: True
+

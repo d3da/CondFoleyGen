@@ -1,5 +1,4 @@
 # import numpy as np
-import sys
 import os
 import torch
 import json
@@ -17,18 +16,20 @@ class GreatestHit(torch.utils.data.Dataset):
                  duration=2.0,
                  n_frames=30,
                  p_audio_aug=0.5,
-                 rand_shift=True,
-                 remove_single_hits=False):
+                 remove_single_hits=False,
+                 remove_none_materials=False,
+                 remove_none_actions=False):
         super().__init__()
         self.split = split
         self.data_path = data_path
         self.duration = duration
         self.n_frames = n_frames
         self.p_audio_aug = p_audio_aug
-        self.rand_shift = rand_shift
         self.metadata_path = metadata_path
         self.remove_single_hits = remove_single_hits
-        
+        self.remove_none_material = remove_none_materials
+        self.remove_none_actions = remove_none_actions
+
         with open(self.metadata_path, 'r') as meta_file:
             self.greatesthit_meta = json.load(meta_file)
         split_filepath = os.path.join(splits_path, f'greatesthit_{split}.json')
@@ -57,11 +58,9 @@ class GreatestHit(torch.utils.data.Dataset):
             # Test if the files exist
             video_path, audio_path = self.get_video_path(video), self.get_audio_path(video)
             if not os.path.isfile(video_path):
-                print(f'Error: could not find video at {video_path}')
-                raise FileNotFoundError
+                raise FileNotFoundError(f'Error: could not find video at {video_path}')
             if not os.path.isfile(audio_path):
-                print(f'Error: could not find audio at {audio_path}')
-                raise FileNotFoundError
+                raise FileNotFoundError(f'Error: could not find audio at {audio_path}')
 
             for idx in start_ids:
                 self.dataset.append((video, idx))
@@ -76,12 +75,24 @@ class GreatestHit(torch.utils.data.Dataset):
         unique_classes = sorted(list(set(ht for ht in self.greatesthit_meta['hit_type'])))
         self.label2hit_class = {label: i for i, label in enumerate(unique_classes)}
 
+        if self.remove_none_material or self.remove_none_actions:
+            self.remove_none_videos()
+
+        print(f'Dataset {self.split} contains {len(self.dataset)} videos')
 
     def remove_single_hit_videos(self):
         for video, idx_list in self.video2idx.items():
             if len(idx_list) == 1:
                 self.video2idx.pop(video)
 
+
+    def remove_none_videos(self):
+        for video, id in self.dataset:
+            label = self.video2label[(video, int(id))]
+            material, action = label.split(' ')
+            if self.remove_none_material and material == 'None' \
+                    or self.remove_none_actions and action == 'None':
+                self.dataset.remove((video, id))
 
     def __len__(self):
         return len(self.dataset)
