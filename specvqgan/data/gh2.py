@@ -53,6 +53,7 @@ class GreatestHit(torch.utils.data.Dataset):
             self.remove_single_hit_videos()
 
         self.dataset = []
+        dataset_set = set()  # for efficient lookups 'x in set'
         for video, start_ids in self.video2idx.items():
 
             # Test if the files exist
@@ -64,13 +65,14 @@ class GreatestHit(torch.utils.data.Dataset):
 
             for idx in start_ids:
                 self.dataset.append((video, idx))
+                dataset_set.add((video, idx))
 
         self.video2label = {(v, int(i)): l
                             for v, i, l in zip(self.greatesthit_meta['video_name'],
                                                self.greatesthit_meta['start_idx'],
                                                self.greatesthit_meta['hit_type'],
                                                strict=True)
-                            if (v, int(i)) in self.dataset}
+                            if (v, int(i)) in dataset_set}
 
         unique_classes = sorted(list(set(ht for ht in self.greatesthit_meta['hit_type'])))
         self.label2hit_class = {label: i for i, label in enumerate(unique_classes)}

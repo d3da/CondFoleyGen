@@ -387,6 +387,7 @@ class LB_VideoEncoder(pl.LightningModule):
         """
         processor = self.modality_transform
 
+        # TODO this is very slow
         pixel_values = [processor.image_processor(input_path,
                         processor.transform,
                         video_decode_backend='pytorchvideo',
