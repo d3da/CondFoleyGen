@@ -35,7 +35,8 @@ class ContrastiveSingleModality(pl.LightningModule):
         self.hit_class_key = hit_class_key
 
         # Use register_buffer so the label_embeddings tensor will be moved to the correct device
-        self.register_buffer('label_embeddings', torch.load(label_embeddings_path, weights_only=True))
+        self.register_buffer('label_embeddings',
+                             torch.load(label_embeddings_path, weights_only=True).requires_grad_(False))
 
     def configure_optimizers(self):
         # TODO set learn rate, etc
