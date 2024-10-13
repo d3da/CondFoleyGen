@@ -46,27 +46,13 @@ class ContrastiveSingleModality(pl.LightningModule):
     def forward(self, m_input, start_times, end_times):
         return self.m_encoder(m_input, start_times, end_times)
 
-    def choose_triplet(self, emb, classes):
-        """TODO: select 'hard' negative examples"""
-        total_classes = self.label_embeddings.shape[0]
-        distribution = []
-        for n in range(emb.shape[0]):
-            weights = torch.ones((total_classes), device=self.device)
-            weights[classes[n]] = 0
-            distribution.append(weights)
-
-        negative_indices = torch.multinomial(torch.stack(distribution), 1).squeeze(dim=1)
-
-        return self.label_embeddings[classes], self.label_embeddings[negative_indices]
-
     def shared_step(self, batch, log_prefix):
         emb = self(batch[self.m_key],
                    batch[self.start_time_key],
                    batch[self.end_time_key])
         classes = batch[self.hit_class_key].to(device=self.device)
 
-        pos_emb, neg_emb = self.choose_triplet(emb, classes)
-        loss, partial_loss_dict = self.loss_fn(emb, pos_emb, neg_emb)
+        loss, partial_loss_dict = self.loss_fn(emb, self.label_embeddings, classes)
 
         self.log_dict({f'{log_prefix}/{k}': v for k, v in partial_loss_dict.items()},
                       prog_bar=False,
@@ -99,7 +85,23 @@ class SingleModalityTripletLoss(pl.LightningModule):
 
         self.epsilon = epsilon
 
+    def choose_triplet(self, emb, label_emb, classes):
+        """TODO: select 'hard' negative examples"""
+        total_classes = label_emb.shape[0]
+        distribution = []
+        for n in range(emb.shape[0]):
+            weights = torch.ones((total_classes), device=self.device)
+            weights[classes[n]] = 0
+            distribution.append(weights)
+
+        negative_indices = torch.multinomial(torch.stack(distribution), 1).squeeze(dim=1)
+        return label_emb[classes], label_emb[negative_indices]
+        
+
     def forward(self, m_emb, pos_emb, neg_emb):
+
+        pos_emb, neg_emb = self.choose_triplet(m_emb, label_emb, classes)
+
         assert m_emb.shape == pos_emb.shape == neg_emb.shape
 
         l_pos = (m_emb - pos_emb).square().sum(dim=1).sqrt()  # todo check dims
@@ -107,11 +109,34 @@ class SingleModalityTripletLoss(pl.LightningModule):
 
         zeros = torch.zeros_like(l_neg)
         loss = torch.max(zeros, l_pos + self.epsilon - l_neg)
-        partial_loss_dict = dict(l_pos=l_pos.sum(),
-                                 l_neg=l_neg.sum())
-        return loss.sum(), partial_loss_dict
+        partial_loss_dict = dict(l_pos=l_pos.mean(),
+                                 l_neg=-l_neg.mean())
+        return loss.mean(), partial_loss_dict
 
 
+class InfoNCELoss(pl.LightningModule):
+    """
+    Loss = - log \\frac{
+    """
+
+    def __init__(self, temperature=1., eps=1e-6):
+        super().__init__()
+        self.temperature = temperature
+
+        self.cosine_sim = torch.nn.CosineSimilarity(dim=2, eps=eps)
+        self.log_softmax = torch.nn.LogSoftmax(dim=1)
+
+    def forward(self, m_emb, label_emb, classes):
+        sim_matrix = self.cosine_sim(m_emb.unsqueeze(1),  # B x 1 x D
+                                     label_emb.unsqueeze(0))  # 1 x L x D
+        sim_matrix /= self.temperature  # B x L
+        prob_logits = self.log_softmax(sim_matrix)
+
+        num_classes = label_emb.shape[0]
+        classes_one_hot = torch.nn.functional.one_hot(classes, num_classes=num_classes)  # B x L
+        loss = -prob_logits.mul(classes_one_hot).sum(dim=1)  # B
+
+        return loss.mean(), dict()
 
 
 

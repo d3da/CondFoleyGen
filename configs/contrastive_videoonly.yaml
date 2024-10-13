@@ -8,9 +8,8 @@ model:
       params:
         n_finetune_layers: 5
     loss_config:
-      target: specvqgan.models.contrastive_pretraining_clip.SingleModalityTripletLoss
-      params:
-        epsilon: 0.2
+      target: specvqgan.models.contrastive_pretraining_clip.InfoNCELoss
+      params: {}
     label_embeddings_path: 'data/GH_label_embeddings.pt'
 
 data:
