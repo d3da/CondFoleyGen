@@ -131,14 +131,15 @@ class GreatestHit(torch.utils.data.Dataset):
     def idx_to_seconds(self, idx: int) -> float:
         return idx / CONDFOLEYGEN_SR
 
-        
+
 
 class GreatestHitDataModule(pl.LightningDataModule):
 
-    def __init__(self, batch_size, *args, **kwargs):
+    def __init__(self, batch_size, num_workers, *args, **kwargs):
         super().__init__()
 
         self.batch_size = batch_size
+        self.num_workers = num_workers
 
         self.args = args
         self.kwargs = kwargs
@@ -152,10 +153,16 @@ class GreatestHitDataModule(pl.LightningDataModule):
         self.test_dataset  = GreatestHit('test',  *self.args, **self.kwargs)
 
     def train_dataloader(self):
-        return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size)
+        return torch.utils.data.DataLoader(self.train_dataset,
+                                           batch_size=self.batch_size,
+                                           num_workers=self.num_workers)
 
     def val_dataloader(self):
-        return torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size)
+        return torch.utils.data.DataLoader(self.val_dataset,
+                                           batch_size=self.batch_size,
+                                           num_workers=self.num_workers)
 
     def test_dataloader(self):
-        return torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size)
+        return torch.utils.data.DataLoader(self.test_dataset,
+                                           batch_size=self.batch_size,
+                                           num_workers=self.num_workers)
