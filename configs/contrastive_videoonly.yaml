@@ -2,7 +2,7 @@
 model:
   target: specvqgan.models.contrastive_pretraining_clip.ContrastiveSingleModality
   params:
-    m_key: 'video_path'
+    m_key: 'video'
     m_encoder_config:
       target: specvqgan.models.contrastive_pretraining_clip.LB_VideoEncoder_PartiallyFrozen
       params:
@@ -23,4 +23,6 @@ data:
     remove_single_hits: False
     remove_none_materials: True
     remove_none_actions: True
-
+    preprocess_video: True
+    preprocess_audio: False
+    

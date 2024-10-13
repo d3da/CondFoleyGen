@@ -3,6 +3,7 @@ import os
 import torch
 import json
 import pytorch_lightning as pl
+import languagebind as lb
 
 CONDFOLEYGEN_SR = 22050
 
@@ -18,7 +19,9 @@ class GreatestHit(torch.utils.data.Dataset):
                  p_audio_aug=0.5,
                  remove_single_hits=False,
                  remove_none_materials=False,
-                 remove_none_actions=False):
+                 remove_none_actions=False,
+                 preprocess_video=False,
+                 preprocess_audio=False):
         super().__init__()
         self.split = split
         self.data_path = data_path
@@ -30,6 +33,10 @@ class GreatestHit(torch.utils.data.Dataset):
         self.remove_none_material = remove_none_materials
         self.remove_none_actions = remove_none_actions
 
+        self.preprocess_video = preprocess_video
+        self.preprocess_audio = preprocess_audio
+        self.init_preprocessors()
+
         with open(self.metadata_path, 'r') as meta_file:
             self.greatesthit_meta = json.load(meta_file)
         split_filepath = os.path.join(splits_path, f'greatesthit_{split}.json')
@@ -37,6 +44,15 @@ class GreatestHit(torch.utils.data.Dataset):
             self.split_videos = json.load(split_file)
 
         self.init_dataset()
+
+    def init_preprocessors(self):
+        if self.preprocess_video:
+            video_config = lb.LanguageBindVideoConfig.from_pretrained('LanguageBind/LanguageBind_Video_FT')
+            video_config.vision_config.video_decode_backend = 'pytorchvideo'
+            self.video_preprocessor = lb.LanguageBindVideoProcessor(video_config)
+        if self.preprocess_audio:
+            audio_config = lb.LanguageBindAudioConfig.from_pretrained('LanguageBind/LanguageBind_Audio_FT')
+            self.audio_preprocessor = lb.LanguageBindAudioProcessor(audio_config)
 
 
     def init_dataset(self):
@@ -119,18 +135,45 @@ class GreatestHit(torch.utils.data.Dataset):
         label = self.video2label[(video, start_idx)]
         hit_class = self.label2hit_class[label]
 
+        video = self.video_preprocess(video_path, start_time, end_time)
+        audio = self.audio_preprocess(audio_path, start_time, end_time)
+
         return dict(video_path=video_path,
                     audio_path=audio_path,
                     start_time=start_time,
                     end_time=end_time,
                     duration=self.duration,
                     label=label,
-                    hit_class=hit_class)
+                    hit_class=hit_class,
+                    video=video,
+                    audio=audio)
 
 
     def idx_to_seconds(self, idx: int) -> float:
         return idx / CONDFOLEYGEN_SR
 
+    def video_preprocess(self, video_path, start_time, end_time):
+        if not self.preprocess_video:
+            return []
+
+        pixel_values = self.video_preprocessor.image_processor(video_path,
+                                                               self.video_preprocessor.transform,
+                                                               video_decode_backend='pytorchvideo',
+                                                               clip_start_sec=start_time,
+                                                               clip_end_sec=end_time,
+                                                               num_frames=None)['video']
+        return pixel_values
+
+    def audio_preprocess(self, audio_path, start_time, end_time):
+        if not self.preprocess_audio:
+            return []
+
+        waveform, sample_rate = lb.audio.processing_audio.torchaudio_loader(audio_path)
+        start_frame = int(start_time * sample_rate)
+        end_frame = int(end_time * sample_rate)
+        waveform_sliced = waveform[:, start_frame:end_frame]
+        pixel_values = self.audio_preprocessor.transform((waveform_sliced, sample_rate))
+        return pixel_values
 
 
 class GreatestHitDataModule(pl.LightningDataModule):

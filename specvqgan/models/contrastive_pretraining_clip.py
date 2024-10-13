@@ -20,8 +20,6 @@ class ContrastiveSingleModality(pl.LightningModule):
                  loss_config,
                  m_key,
                  label_embeddings_path,
-                 start_time_key='start_time',
-                 end_time_key='end_time',
                  hit_class_key='hit_class'):
         super().__init__()
         self.save_hyperparameters()
@@ -30,8 +28,6 @@ class ContrastiveSingleModality(pl.LightningModule):
         self.loss_fn = instantiate_from_config(loss_config)
 
         self.m_key = m_key
-        self.start_time_key = start_time_key
-        self.end_time_key = end_time_key
         self.hit_class_key = hit_class_key
 
         # Use register_buffer so the label_embeddings tensor will be moved to the correct device
@@ -44,13 +40,11 @@ class ContrastiveSingleModality(pl.LightningModule):
         params = (p for p in m.m_encoder.parameters() if p.requires_grad)
         return torch.optim.Adam(params)
 
-    def forward(self, m_input, start_times, end_times):
-        return self.m_encoder(m_input, start_times, end_times)
+    def forward(self, m_input):
+        return self.m_encoder(m_input)
 
     def shared_step(self, batch, log_prefix):
-        emb = self(batch[self.m_key],
-                   batch[self.start_time_key],
-                   batch[self.end_time_key])
+        emb = self(batch[self.m_key])
         classes = batch[self.hit_class_key].to(device=self.device)
 
         loss, partial_loss_dict = self.loss_fn(emb, self.label_embeddings, classes)
@@ -368,37 +362,37 @@ class LB_VideoEncoder(pl.LightningModule):
         self.pretrained_ckpt = pretrained_ckpt
         self.model = lb.LanguageBindVideo.from_pretrained(pretrained_ckpt, cache_dir=cache_dir).to(device=self.device)
 
-        self.model.config.vision_config.video_decode_backend = 'pytorchvideo'
+        # self.model.config.vision_config.video_decode_backend = 'pytorchvideo'
 
-        self.modality_transform = lb.LanguageBindVideoProcessor(self.model.config)
+        # self.modality_transform = lb.LanguageBindVideoProcessor(self.model.config)
 
         self.model.text_model = None
         self.model.text_projection = None
 
-    def forward(self, input_paths, clip_start_times, clip_end_times):
-        with torch.no_grad():
-            input = self.process_input_video(input_paths, clip_start_times, clip_end_times)
+    def forward(self, input):
+        # with torch.no_grad():
+            # input = self.process_input_video(input_paths, clip_start_times, clip_end_times)
         output = self.model.vision_model(pixel_values=input)[1]
         output_projected = self.model.visual_projection(output)
         return output_projected
 
-    def process_input_video(self, input_paths, clip_start_times, clip_end_times):
-        """
-        We do this instead of using VideoProcessor.__call__ so we can supply the start and end times
-        """
-        processor = self.modality_transform
+    # def process_input_video(self, input_paths, clip_start_times, clip_end_times):
+    #     """
+    #     We do this instead of using VideoProcessor.__call__ so we can supply the start and end times
+    #     """
+    #     processor = self.modality_transform
 
-        # TODO this is very slow
-        pixel_values = [processor.image_processor(input_path,
-                        processor.transform,
-                        video_decode_backend='pytorchvideo',
-                        clip_start_sec=clip_start_time,
-                        clip_end_sec=clip_end_time,
-                        num_frames=None)['video']
-        for input_path, clip_start_time, clip_end_time
-        in zip(input_paths, clip_start_times, clip_end_times)]
+    #     # TODO this is very slow
+    #     pixel_values = [processor.image_processor(input_path,
+    #                     processor.transform,
+    #                     video_decode_backend='pytorchvideo',
+    #                     clip_start_sec=clip_start_time,
+    #                     clip_end_sec=clip_end_time,
+    #                     num_frames=None)['video']
+    #     for input_path, clip_start_time, clip_end_time
+    #     in zip(input_paths, clip_start_times, clip_end_times)]
 
-        return torch.stack(pixel_values).to(device=self.device)
+    #     return torch.stack(pixel_values).to(device=self.device)
 
     def parameters(self):
         return list(self.model.vision_model.parameters()) + list(self.model.visual_projection.parameters())
@@ -417,32 +411,32 @@ class LB_AudioEncoder(pl.LightningModule):
 
         self.pretrained_ckpt = pretrained_ckpt
         self.model = lb.LanguageBindAudio.from_pretrained(pretrained_ckpt, cache_dir=cache_dir)
-        self.modality_transform = lb.LanguageBindAudioProcessor(self.model.config)
+        # self.modality_transform = lb.LanguageBindAudioProcessor(self.model.config)
 
         self.model.text_model = None
         self.model.text_projection = None
 
-    def forward(self, input_paths, start_times, end_times):
-        with torch.no_grad():
-            input = self.process_input_audio(input_paths, start_times, end_times)
+    def forward(self, input):
+        # with torch.no_grad():
+            # input = self.process_input_audio(input_paths, start_times, end_times)
         output = self.model.vision_model(pixel_values=input)[1]
         output_projected = self.model.visual_projection(output)
         return output_projected
 
 
-    def process_input_audio(self, input_paths, start_times, end_times):
-        processor = self.modality_transform
+    # def process_input_audio(self, input_paths, start_times, end_times):
+    #     processor = self.modality_transform
 
-        pixel_values = []
-        for input_path, start_time, end_time in zip(input_paths, start_times, end_times):
-            waveform, sample_rate = lb.audio.processing_audio.torchaudio_loader(input_path)
-            start_frame = int(start_time * sample_rate)
-            end_frame = int(end_time * sample_rate)
-            waveform = waveform[:, start_frame : end_frame]
+    #     pixel_values = []
+    #     for input_path, start_time, end_time in zip(input_paths, start_times, end_times):
+    #         waveform, sample_rate = lb.audio.processing_audio.torchaudio_loader(input_path)
+    #         start_frame = int(start_time * sample_rate)
+    #         end_frame = int(end_time * sample_rate)
+    #         waveform = waveform[:, start_frame : end_frame]
 
-            pixel_values.append(processor.transform((waveform, sample_rate)))
+    #         pixel_values.append(processor.transform((waveform, sample_rate)))
 
-        return torch.stack(pixel_values).to(device=self.device)
+    #     return torch.stack(pixel_values).to(device=self.device)
 
     def parameters(self):
         return list(self.model.vision_model.parameters()) + list(self.model.visual_projection.parameters())
