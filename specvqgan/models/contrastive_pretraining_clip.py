@@ -30,9 +30,13 @@ class ContrastiveSingleModality(pl.LightningModule):
         self.m_key = m_key
         self.hit_class_key = hit_class_key
 
-        # Use register_buffer so the label_embeddings tensor will be moved to the correct device
+        label_emb_dict = torch.load(label_embeddings_path)
+
+        # Use register_buffer so tensors will be moved to the correct device
         self.register_buffer('label_embeddings',
-                             torch.load(label_embeddings_path, weights_only=True).requires_grad_(False))
+                             label_emb_dict['label_embeddings'].requires_grad_(False))
+        self.register_buffer('label_none_mask',
+                             label_emb_dict['none_mask'].requires_grad_(False))
 
     def configure_optimizers(self):
         # TODO set learn rate, etc
@@ -47,7 +51,10 @@ class ContrastiveSingleModality(pl.LightningModule):
         emb = self(batch[self.m_key])
         classes = batch[self.hit_class_key].to(device=self.device)
 
-        loss, partial_loss_dict = self.loss_fn(emb, self.label_embeddings, classes)
+        loss, partial_loss_dict = self.loss_fn(emb,
+                                               self.label_embeddings,
+                                               classes,
+                                               self.label_none_mask)
 
         self.log_dict({f'{log_prefix}/{k}': v for k, v in partial_loss_dict.items()},
                       prog_bar=False,
@@ -114,17 +121,22 @@ class InfoNCELoss(pl.LightningModule):
     Loss = - log \\frac{
     """
 
-    def __init__(self, temperature=1., eps=1e-6):
+    def __init__(self, temperature=1., eps=1e-6, use_label_mask=False):
         super().__init__()
         self.temperature = temperature
 
         self.cosine_sim = torch.nn.CosineSimilarity(dim=2, eps=eps)
         self.log_softmax = torch.nn.LogSoftmax(dim=1)
+        self.use_label_mask = use_label_mask
 
-    def forward(self, m_emb, label_emb, classes):
+    def forward(self, m_emb, label_emb, classes, label_mask):
         sim_matrix = self.cosine_sim(m_emb.unsqueeze(1),  # B x 1 x D
                                      label_emb.unsqueeze(0))  # 1 x L x D
         sim_matrix /= self.temperature  # B x L
+
+        if self.use_label_mask:
+            sim_matrix *= label_mask
+            
         prob_logits = self.log_softmax(sim_matrix)
 
         num_classes = label_emb.shape[0]

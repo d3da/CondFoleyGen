@@ -21,8 +21,18 @@ def create_label_embeddings(gh_meta_filepath: str = 'data/info_r2plus1d_dim1024_
     unique_classes = sorted(list(set(ht for ht in meta['hit_type'])))
     #label2hit_class = {label: i for i, label in enumerate(unique_classes)}
 
+    none_mask = []
+    for label in unique_classes:
+        material, action = label.split(' ')
+        if material == 'None' or action == 'None':
+            none_mask.append(0)
+        else:
+            none_mask.append(1)
+        
+
     label_embeddings = label_encoder(unique_classes)
-    torch.save(label_embeddings, label_embeddings_path)
+    none_mask = torch.tensor(none_mask)
+    torch.save(dict(label_embeddings=label_embeddings, none_mask=none_mask), label_embeddings_path)
 
 
 if __name__ == '__main__':
