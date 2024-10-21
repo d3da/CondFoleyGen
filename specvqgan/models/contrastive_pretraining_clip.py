@@ -20,6 +20,8 @@ class ContrastiveSingleModality(pl.LightningModule):
                  loss_config,
                  m_key,
                  label_embeddings_path,
+                 optim_learn_rate,
+                 optim_weight_decay,
                  hit_class_key='hit_class'):
         super().__init__()
         self.save_hyperparameters()
@@ -38,11 +40,16 @@ class ContrastiveSingleModality(pl.LightningModule):
         self.register_buffer('label_none_mask',
                              label_emb_dict['none_mask'].requires_grad_(False))
 
+        self.optim_learn_rate = optim_learn_rate
+        self.optim_weight_decay = optim_weight_decay
+
     def configure_optimizers(self):
         # TODO set learn rate, etc
         m = self.trainer.model
         params = (p for p in m.m_encoder.parameters() if p.requires_grad)
-        return torch.optim.Adam(params)
+        return torch.optim.Adam(params,
+                                lr=self.optim_learn_rate,
+                                weight_decay=self.optim_weight_decay)
 
     def forward(self, m_input):
         return self.m_encoder(m_input)
