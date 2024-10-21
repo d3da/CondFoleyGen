@@ -12,34 +12,33 @@ import languagebind
 from omegaconf import OmegaConf
 from train import instantiate_from_config
 
-# sys.path.append(os.getcwd())
+import torch
 
-# conf = OmegaConf.load('configs/contrastive_textbound_av.yaml')
-# conf = OmegaConf.load('configs/contrastive_new.yaml')
-conf = OmegaConf.load('configs/contrastive_videoonly.yaml')
-model = instantiate_from_config(conf.model)
-data = instantiate_from_config(conf.data)
-data.prepare_data()
-data.setup()
+def main():
+    torch.cuda.empty_cache()
+    torch.set_float32_matmul_precision("high")
+    
+    conf = OmegaConf.load('configs/contrastive_videoonly.yaml')
+    model = instantiate_from_config(conf.model)
+    data = instantiate_from_config(conf.data)
+    data.prepare_data()
+    data.setup()
+    
+    profiler = pl.profilers.AdvancedProfiler(dirpath='.', filename='profiler_report')
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(save_top_k=5,
+                                                       monitor='hp_metric',
+                                                       mode='min',
+                                                       filename='{epoch}-{step}-{hp_metric}')
+    trainer = pl.Trainer(accelerator='gpu',
+                         devices=1,
+                         #strategy='ddp',
+                         precision='16-mixed',
+                         log_every_n_steps=10,
+                         val_check_interval=0.50,
+                         profiler=profiler)
+                         
+    
+    trainer.fit(model, data)
 
-x = data.train_dataloader()
-
-# vid = model.video_encoder(['./data/demo_video/chopping.mp4'])
-# print(vid)
-
-# aud = model.audio_encoder(['./data/greatesthit/greatesthit_processed/2015-02-16-16-49-06/audio/2015-02-16-16-49-06_denoised.wav'])
-# print(aud)
-
-# lbl = model.label_encoder(['The quick brown fox jumps over the lazy dog'])
-# print(lbl)
-
-# [print(a) for a in x]
-
-# for batch in x:
-    # model.shared_step(batch)
-
-trainer = pl.Trainer(accelerator="cpu")
-
-trainer.fit(model, data)
-
-# import pdb; pdb.set_trace()
+if __name__ == '__main__':
+    main()
