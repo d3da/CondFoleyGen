@@ -180,6 +180,7 @@ class GreatestHitDataModule(pl.LightningDataModule):
 
     def __init__(self, batch_size, num_workers, *args, **kwargs):
         super().__init__()
+        self.save_hyperparameters()
 
         self.batch_size = batch_size
         self.num_workers = num_workers

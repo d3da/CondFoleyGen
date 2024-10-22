@@ -77,6 +77,7 @@ class ContrastiveSingleModality(pl.LightningModule):
 
     def validation_step(self, batch, *args, **kwargs):
         loss = self.shared_step(batch, 'validation')
+        self.log('hp_metric', loss)
         return loss
 
     def test_step(self, batch, *args, **kwargs):
@@ -377,6 +378,7 @@ class LB_VideoEncoder(pl.LightningModule):
                  pretrained_ckpt: str = 'LanguageBind/LanguageBind_Video_FT',
                  cache_dir: str = './cache_dir'):
         super().__init__()
+        self.save_hyperparameters()
 
         self.pretrained_ckpt = pretrained_ckpt
         self.model = lb.LanguageBindVideo.from_pretrained(pretrained_ckpt, cache_dir=cache_dir).to(device=self.device)
@@ -427,6 +429,7 @@ class LB_AudioEncoder(pl.LightningModule):
                  pretrained_ckpt: str = 'LanguageBind/LanguageBind_Audio_FT',
                  cache_dir: str = './cache_dir'):
         super().__init__()
+        self.save_hyperparameters()
 
         self.pretrained_ckpt = pretrained_ckpt
         self.model = lb.LanguageBindAudio.from_pretrained(pretrained_ckpt, cache_dir=cache_dir)
@@ -471,6 +474,7 @@ class LB_LabelEncoder(pl.LightningModule):
                  pretrained_ckpt: str = 'LanguageBind/LanguageBind_Video_FT',
                  cache_dir: str = './cache_dir'):
         super().__init__()
+        self.save_hyperparameters()
 
         self.pretrained_ckpt = pretrained_ckpt
         self.model = lb.LanguageBindVideo.from_pretrained(pretrained_ckpt, cache_dir=cache_dir)
