@@ -4,8 +4,11 @@ import torch
 import json
 import pytorch_lightning as pl
 import languagebind as lb
+import cv2
+import numpy as np
 
 CONDFOLEYGEN_SR = 22050
+LANGUAGEBIND_VIDEO_NUM_FRAMES = 8
 
 class GreatestHit(torch.utils.data.Dataset):
 
@@ -47,11 +50,11 @@ class GreatestHit(torch.utils.data.Dataset):
 
     def init_preprocessors(self):
         if self.preprocess_video:
-            video_config = lb.LanguageBindVideoConfig.from_pretrained('LanguageBind/LanguageBind_Video_FT')
-            video_config.vision_config.video_decode_backend = 'pytorchvideo'
+            video_config = lb.LanguageBindVideoConfig.from_pretrained('LanguageBind/LanguageBind_Video_FT', cache_dir='./cache_dir')
+            video_config.vision_config.video_decode_backend = 'opencv'
             self.video_preprocessor = lb.LanguageBindVideoProcessor(video_config)
         if self.preprocess_audio:
-            audio_config = lb.LanguageBindAudioConfig.from_pretrained('LanguageBind/LanguageBind_Audio_FT')
+            audio_config = lb.LanguageBindAudioConfig.from_pretrained('LanguageBind/LanguageBind_Audio_FT', cache_dir='./cache_dir')
             self.audio_preprocessor = lb.LanguageBindAudioProcessor(audio_config)
 
 
@@ -135,7 +138,7 @@ class GreatestHit(torch.utils.data.Dataset):
         label = self.video2label[(video, start_idx)]
         hit_class = self.label2hit_class[label]
 
-        video = self.video_preprocess(video_path, start_time, end_time)
+        video = self.video_preprocess(video_path, start_time, end_time, num_frames=LANGUAGEBIND_VIDEO_NUM_FRAMES)
         audio = self.audio_preprocess(audio_path, start_time, end_time)
 
         return dict(video_path=video_path,
@@ -152,17 +155,60 @@ class GreatestHit(torch.utils.data.Dataset):
     def idx_to_seconds(self, idx: int) -> float:
         return idx / CONDFOLEYGEN_SR
 
-    def video_preprocess(self, video_path, start_time, end_time):
+    #def video_preprocess(self, video_path, start_time, end_time):
+    #    if not self.preprocess_video:
+    #        return []
+
+    #    pixel_values = self.video_preprocessor.image_processor(video_path,
+    #                                                           self.video_preprocessor.transform,
+    #                                                           video_decode_backend='pytorchvideo',
+    #                                                           clip_start_sec=start_time,
+    #                                                           clip_end_sec=end_time,
+    #                                                           num_frames=None)['video']
+    #    return pixel_values
+
+
+    def video_preprocess(self, video_path, start_time, end_time, num_frames):
         if not self.preprocess_video:
             return []
 
-        pixel_values = self.video_preprocessor.image_processor(video_path,
-                                                               self.video_preprocessor.transform,
-                                                               video_decode_backend='pytorchvideo',
-                                                               clip_start_sec=start_time,
-                                                               clip_end_sec=end_time,
-                                                               num_frames=None)['video']
+        cv2_vr = cv2.VideoCapture(video_path)
+    
+        # Get the frames per second (FPS) of the video
+        fps = cv2_vr.get(cv2.CAP_PROP_FPS)
+    
+        # Calculate total duration in seconds
+        total_frames = int(cv2_vr.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps
+    
+        # Ensure start_time and end_time are within the video duration
+        start_time = max(0, start_time)
+        end_time = min(duration, end_time)
+    
+        # Calculate the frame indices for the segment
+        start_frame = int(start_time * fps)
+        end_frame = int(end_time * fps)
+        
+        # Generate frame indices for the desired segment
+        frame_id_list = np.linspace(start_frame, end_frame - 1, num_frames, dtype=int)
+    
+        video_data = []
+        for frame_idx in frame_id_list:
+            cv2_vr.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cv2_vr.read()
+            if ret:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                video_data.append(torch.from_numpy(frame).permute(2, 0, 1))
+        
+        cv2_vr.release()
+        
+        if len(video_data) == 0:
+            return []
+
+        video_data = torch.stack(video_data, dim=1)
+        pixel_values = self.video_preprocessor.transform(video_data)
         return pixel_values
+
 
     def audio_preprocess(self, audio_path, start_time, end_time):
         if not self.preprocess_audio:
