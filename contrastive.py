@@ -10,9 +10,10 @@ print(sys.path)
 import languagebind
 
 from omegaconf import OmegaConf
-from train import instantiate_from_config
+from utils import instantiate_from_config
 
 import torch
+
 
 def main():
     torch.cuda.empty_cache()

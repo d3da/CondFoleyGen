@@ -7,7 +7,7 @@ import languagebind as lb
 
 sys.path.insert(0, '.')
 
-from train import instantiate_from_config
+from utils import instantiate_from_config
 
 
 class ContrastiveSingleModality(pl.LightningModule):
