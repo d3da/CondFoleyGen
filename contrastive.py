@@ -34,9 +34,8 @@ def main():
                          devices=1,
                          #strategy='ddp',
                          precision='16-mixed',
-                         log_every_n_steps=10,
-                         val_check_interval=0.50,
-                         profiler=profiler)
+                         profiler=profiler,
+                         callbacks=[checkpoint_callback])
                          
     
     trainer.fit(model, data)
