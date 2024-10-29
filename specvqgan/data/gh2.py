@@ -155,19 +155,6 @@ class GreatestHit(torch.utils.data.Dataset):
     def idx_to_seconds(self, idx: int) -> float:
         return idx / CONDFOLEYGEN_SR
 
-    #def video_preprocess(self, video_path, start_time, end_time):
-    #    if not self.preprocess_video:
-    #        return []
-
-    #    pixel_values = self.video_preprocessor.image_processor(video_path,
-    #                                                           self.video_preprocessor.transform,
-    #                                                           video_decode_backend='pytorchvideo',
-    #                                                           clip_start_sec=start_time,
-    #                                                           clip_end_sec=end_time,
-    #                                                           num_frames=None)['video']
-    #    return pixel_values
-
-
     def video_preprocess(self, video_path, start_time, end_time, num_frames):
         if not self.preprocess_video:
             return []
@@ -224,12 +211,13 @@ class GreatestHit(torch.utils.data.Dataset):
 
 class GreatestHitDataModule(pl.LightningDataModule):
 
-    def __init__(self, batch_size, num_workers, *args, **kwargs):
+    def __init__(self, batch_size, num_workers, shuffle_every_epoch, *args, **kwargs):
         super().__init__()
         self.save_hyperparameters()
 
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.shuffle_every_epoch = shuffle_every_epoch
 
         self.args = args
         self.kwargs = kwargs
@@ -245,14 +233,17 @@ class GreatestHitDataModule(pl.LightningDataModule):
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train_dataset,
                                            batch_size=self.batch_size,
-                                           num_workers=self.num_workers)
+                                           num_workers=self.num_workers,
+                                           shuffle=self.shuffle_every_epoch)
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(self.val_dataset,
                                            batch_size=self.batch_size,
-                                           num_workers=self.num_workers)
+                                           num_workers=self.num_workers,
+                                           shuffle=self.shuffle_every_epoch)
 
     def test_dataloader(self):
         return torch.utils.data.DataLoader(self.test_dataset,
                                            batch_size=self.batch_size,
-                                           num_workers=self.num_workers)
+                                           num_workers=self.num_workers,
+                                           shuffle=self.shuffle_every_epoch)
