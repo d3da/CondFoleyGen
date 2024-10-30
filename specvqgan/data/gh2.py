@@ -159,34 +159,44 @@ class GreatestHit(torch.utils.data.Dataset):
         if not self.preprocess_video:
             return []
 
+        # cv2_vr = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
         cv2_vr = cv2.VideoCapture(video_path)
     
-        # Get the frames per second (FPS) of the video
         fps = cv2_vr.get(cv2.CAP_PROP_FPS)
-    
-        # Calculate total duration in seconds
         total_frames = int(cv2_vr.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps
-    
-        # Ensure start_time and end_time are within the video duration
         start_time = max(0, start_time)
         end_time = min(duration, end_time)
-    
-        # Calculate the frame indices for the segment
         start_frame = int(start_time * fps)
         end_frame = int(end_time * fps)
         
         # Generate frame indices for the desired segment
         frame_id_list = np.linspace(start_frame, end_frame - 1, num_frames, dtype=int)
-    
+
+        # Seek to the first frame needed
+        cv2_vr.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        current_frame = start_frame - 1
+
         video_data = []
         for frame_idx in frame_id_list:
-            cv2_vr.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ret, frame = cv2_vr.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                video_data.append(torch.from_numpy(frame).permute(2, 0, 1))
-        
+            ret = False
+            while True:
+                current_frame += 1
+                ret, frame = cv2_vr.read()
+                if not ret or current_frame >= frame_idx:
+                    # reached target frame or end of video
+                    break
+
+            if not ret:
+                break
+
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # model expects R,G,B
+            video_data.append(torch.from_numpy(frame_rgb).permute(2, 0, 1))  # model expects C x H x W
+
+
+        if len(video_data) != len(frame_id_list):
+            raise Exception("Did not find all frames in video.")
+
         cv2_vr.release()
         
         if len(video_data) == 0:
