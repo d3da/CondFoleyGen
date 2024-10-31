@@ -5,6 +5,7 @@ import json
 import pytorch_lightning as pl
 import languagebind as lb
 import cv2
+import av
 import numpy as np
 
 CONDFOLEYGEN_SR = 22050
@@ -158,53 +159,106 @@ class GreatestHit(torch.utils.data.Dataset):
     def video_preprocess(self, video_path, start_time, end_time, num_frames):
         if not self.preprocess_video:
             return []
-
-        # cv2_vr = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
-        cv2_vr = cv2.VideoCapture(video_path)
-    
-        fps = cv2_vr.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cv2_vr.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = total_frames / fps
+        
+        container = av.open(video_path)
+        video_stream = container.streams.video[0]
+        fps = video_stream.average_rate
+        duration = video_stream.duration * video_stream.time_base
         start_time = max(0, start_time)
         end_time = min(duration, end_time)
         start_frame = int(start_time * fps)
         end_frame = int(end_time * fps)
-        
+
         # Generate frame indices for the desired segment
         frame_id_list = np.linspace(start_frame, end_frame - 1, num_frames, dtype=int)
 
-        # Seek to the first frame needed
-        cv2_vr.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        current_frame = start_frame - 1
+        # Seek to the closest keyframe before start_frame
+        container.seek(int(start_time / video_stream.time_base))
 
         video_data = []
-        for frame_idx in frame_id_list:
-            ret = False
-            while True:
-                current_frame += 1
-                ret, frame = cv2_vr.read()
-                if not ret or current_frame >= frame_idx:
-                    # reached target frame or end of video
+        current_frame_idx = start_frame - 1
+        target_frame_idx = 0
+
+        for frame in container.decode(video=0):
+            current_frame_idx += 1
+
+            # Skip frames until reaching the target frame
+            while target_frame_idx < len(frame_id_list) and current_frame_idx < frame_id_list[target_frame_idx]:
+                current_frame_idx += 1
+                continue
+
+            # Capture frames at the required frame indices
+            if target_frame_idx < len(frame_id_list) and current_frame_idx == frame_id_list[target_frame_idx]:
+                frame_rgb = frame.to_rgb().to_ndarray()
+                video_data.append(torch.from_numpy(frame_rgb).permute(2, 0, 1))  # Format as C x H x W for PyTorch
+                target_frame_idx += 1
+
+                # Stop if all required frames are collected
+                if target_frame_idx >= len(frame_id_list):
                     break
 
-            if not ret:
-                break
-
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # model expects R,G,B
-            video_data.append(torch.from_numpy(frame_rgb).permute(2, 0, 1))  # model expects C x H x W
-
-
+        # Raise an error if not all frames were captured
         if len(video_data) != len(frame_id_list):
             raise Exception("Did not find all frames in video.")
 
-        cv2_vr.release()
+        container.close()
         
-        if len(video_data) == 0:
-            return []
+        # Stack frames and apply preprocessing
+        video_data_tensor = torch.stack(video_data, dim=1)
+        pixel_values = self.video_preprocessor.transform(video_data_tensor)
 
-        video_data = torch.stack(video_data, dim=1)
-        pixel_values = self.video_preprocessor.transform(video_data)
         return pixel_values
+
+    # def _video_preprocess(self, video_path, start_time, end_time, num_frames):
+    #     if not self.preprocess_video:
+    #         return []
+
+    #     # cv2_vr = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
+    #     cv2_vr = cv2.VideoCapture(video_path)
+    
+    #     fps = cv2_vr.get(cv2.CAP_PROP_FPS)
+    #     total_frames = int(cv2_vr.get(cv2.CAP_PROP_FRAME_COUNT))
+    #     duration = total_frames / fps
+    #     start_time = max(0, start_time)
+    #     end_time = min(duration, end_time)
+    #     start_frame = int(start_time * fps)
+    #     end_frame = int(end_time * fps)
+        
+    #     # Generate frame indices for the desired segment
+    #     frame_id_list = np.linspace(start_frame, end_frame - 1, num_frames, dtype=int)
+
+    #     # Seek to the first frame needed
+    #     cv2_vr.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    #     current_frame = start_frame - 1
+
+    #     video_data = []
+    #     for frame_idx in frame_id_list:
+    #         # ret = False
+    #         while True:
+    #             current_frame += 1
+    #             ret, frame = cv2_vr.read()
+    #             if not ret or current_frame >= frame_idx:
+    #                 # reached target frame or end of video
+    #                 break
+
+    #         if not ret:
+    #             break
+
+    #         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # model expects R,G,B
+    #         video_data.append(torch.from_numpy(frame_rgb).permute(2, 0, 1))  # model expects C x H x W
+
+
+    #     if len(video_data) != len(frame_id_list):
+    #         raise Exception("Did not find all frames in video.")
+
+    #     cv2_vr.release()
+        
+    #     if len(video_data) == 0:
+    #         return []
+
+    #     video_data = torch.stack(video_data, dim=1)
+    #     pixel_values = self.video_preprocessor.transform(video_data)
+    #     return pixel_values
 
 
     def audio_preprocess(self, audio_path, start_time, end_time):
