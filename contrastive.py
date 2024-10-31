@@ -22,23 +22,24 @@ def main():
     conf = OmegaConf.load('configs/contrastive_videoonly.yaml')
     model = instantiate_from_config(conf.model)
     data = instantiate_from_config(conf.data)
-    data.prepare_data()
-    data.setup()
+    # data.prepare_data()
+    # data.setup()
     
     profiler = pl.profilers.AdvancedProfiler(dirpath='.', filename='profiler_report')
     checkpoint_callback = pl.callbacks.ModelCheckpoint(save_top_k=5,
                                                        monitor='hp_metric',
                                                        mode='min',
                                                        filename='{epoch}-{step}-{hp_metric}')
+    lr_monitor_callback = pl.callbacks.LearningRateMonitor(logging_interval='epoch')
     trainer = pl.Trainer(accelerator='gpu',
                          devices=1,
                          #strategy='ddp',
                          precision='16-mixed',
                          profiler=profiler,
-                         callbacks=[checkpoint_callback])
+                         callbacks=[checkpoint_callback, lr_monitor_callback])
                          
     
-    trainer.fit(model, data)
+    trainer.fit(model, datamodule=data)
 
 if __name__ == '__main__':
     main()
