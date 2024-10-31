@@ -44,12 +44,22 @@ class ContrastiveSingleModality(pl.LightningModule):
         self.optim_weight_decay = optim_weight_decay
 
     def configure_optimizers(self):
-        # TODO set learn rate, etc
         m = self.trainer.model
         params = (p for p in m.m_encoder.parameters() if p.requires_grad)
-        return torch.optim.Adam(params,
-                                lr=self.optim_learn_rate,
-                                weight_decay=self.optim_weight_decay)
+        optimizer = torch.optim.Adam(params,
+                                     lr=self.optim_learn_rate,
+                                     weight_decay=self.optim_weight_decay)
+        lr_scheduler_config = {
+            'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer),
+            'monitor': 'validation/loss',
+            'frequency': self.trainer.check_val_every_n_epoch
+        }
+
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': lr_scheduler_config
+        }
+
 
     def forward(self, m_input):
         return self.m_encoder(m_input)
