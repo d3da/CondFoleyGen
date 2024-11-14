@@ -37,160 +37,209 @@ class TCCLoss(pl.LightningModule):
         return loss  # L_1
 
 
-
-
-
 class GTCCLoss(pl.LightningModule):
-    def __init__(self, n_components, lbfgs_max_iters, lbfgs_lr, tcc_lambda):
+    def __init__(self,
+                 n_components: int,
+                 lbfgs_max_iters: int,
+                 lbfgs_lr: float,
+                 tcc_lambda: float,
+                 window_ratio: float,
+                 divide_by_variance: bool):
         super().__init__()
 
         self.n_components = n_components
         self.lbfgs_max_iters = lbfgs_max_iters
         self.lbfgs_lr = lbfgs_lr
         self.tcc_lambda = tcc_lambda
-
-        self.cos_sim = torch.nn.CosineSimilarity(dim=1)
-        self.softmax = torch.nn.Softmax(dim=0)
-
-    def gtcc_loss(self,
-                  i,
-                  u,  # L_1 x D
-                  v): # L_2 x D
-        """
-        # TODO: Batched version of the algorithm, or at least consider multiple i in calculating alphas.
-        #       Fitting the GMM still done by looping through all i's
-        """
-        u_i = u[i]  # D
-        out_sim = self.cos_sim(u_i.unsqueeze(0), v)  # L_2
-        alphas = self.softmax(out_sim)  # L_2
-
-        component_means, component_variances, component_weights = self.fit_gaussian_mixture_model(alphas)
-        snns = self.component_snns(v, component_means, component_variances)  # K x D
-
-        in_sim = torch.nn.functional.cosine_similarity(u.unsqueeze(1),  # L_1 x 1 x D
-                                                       snns.unsqueeze(0),  # 1 x K x D
-                                                       dim=2)  # (L_1 x K x D) -> L_1 x K
-        betas = self.softmax(in_sim)  # L_1 x K
-
-        # TODO: Set beta_j = 0 for j outside a window w around i
-        #       Do we need to do that before normalizing betas?
-
-        arange = torch.arange(0, betas.shape[0], device=self.device).unsqueeze(1)  # L x 1
-
-        # TODO don't use mul().sum() but use torch.einsum('kl, k -> k', betas, arange(unsqueezed))
-        mean_idxs = betas.mul(arange).sum(dim=0)  # K
-        variances = torch.square(arange - mean_idxs.unsqueeze(0)).mul(betas).sum(dim=0)  # K  # TODO use einsum/dot
-
-        component_losses = torch.square(i - mean_idxs) / variances + 0.5 * self.tcc_lambda * variances  # K
-        return component_losses.mul(component_weights).sum()  # TODO use dot product
-
+        self.window_ratio = window_ratio
+        self.divide_by_variance = divide_by_variance
 
     def component_snns(self,
-                       primary_sequence,  # L_1 x D
-                       component_means,
-                       component_variances):
-        sequence_length = primary_sequence.shape[0]
-        component_probabilities = self.component_probabilities(sequence_length, component_means, component_variances)  # L x K
-        neighbor_weights = primary_sequence.unsqueeze(1).mul(component_probabilities.unsqueeze(2))  # L x K x D
-        snns = neighbor_weights.sum(dim=0)  # K x D  # TODO use einsum
+                       secondary_sequence,  # L_2 x D
+                       component_means,  # L_1 x K
+                       component_variances):  # L_1 x K
+        sequence_length = secondary_sequence.shape[0]
+        component_probabilities = self.component_probabilities(sequence_length,
+                                                               component_means,
+                                                               component_variances)   # L_1 x K x L_2
+        snns = torch.einsum('ikj, jd -> ikd', component_probabilities, secondary_sequence)  # L_1 x K x D
         return snns
 
-    def component_probabilities(self,
-                                sequence_length,
-                                component_means,
-                                component_variances):
+    def stochastic_window_mask(self, sequence_length):
         """
-        Calculate K per-component probability distributions of a mixture of discrete gaussian distributions.
+        Diff with GTCC:
+        - Randomly select shift out of [0, ..., window_size - 1] instead of [0, window_size - 1]
+        - Apply 'insurance' fix only where needed, so that the window size is not increased for outer indices
         """
-        component_means = component_means.clamp(0, sequence_length)  # This seems necessary to stabilize the optimization
-        component_variances = torch.abs(component_variances)  # K   # TODO move this?
-        # TODO clamp the variances to a minimal of 0.5 like original authors
+        ones = torch.ones(sequence_length, sequence_length, dtype=torch.bool, device=self.device)
+        if self.window_ratio >= 1.0:
+            return ones
 
-        arange = torch.arange(0, sequence_length, step=1, device=self.device)  # L
-        dst = torch.square(arange.unsqueeze(1) - component_means.unsqueeze(0))  # (L x 1) - (1 x K) -> L x K
-        gaussian_logits = -0.5 * dst / component_variances.unsqueeze(0)  # L x K
-        gaussian_probabilities = self.softmax(gaussian_logits)  # L x K
-        return gaussian_probabilities
+        window_size = round(self.window_ratio * sequence_length)
+        shift = random.randint(0, window_size - 1)
 
-    def gmm_probabilities(self,
-                          sequence_length,
-                          component_means,
-                          component_variances,
-                          component_weights):
-        """
-        Calculate the probability distribution of a discrete Gaussian Mixture Model with K components
-        """
-        component_probabilities = self.component_probabilities(sequence_length, component_means, component_variances)
-        weighted_probabilities = component_weights.unsqueeze(0) * component_probabilities  # L x K
-        return weighted_probabilities.sum(dim=1)  # L  # TODO use einsum?
+        upper_triangle = torch.triu(ones, diagonal=-shift)
+        lower_triangle = torch.triu(ones, diagonal=1 + shift - window_size).T
+        windows = torch.logical_and(upper_triangle, lower_triangle)
+
+        # Fix windows shifted so far that the window size decreased
+        if shift > 0:
+            windows[:shift, :window_size] = True
+        if shift < window_size - 1:
+            windows[1 + shift - window_size:, -window_size:] = True
+
+        return windows  # L x L
 
 
-    @torch.enable_grad()
-    def kl_divergence(self, alphas, component_means, component_variances, component_weights, epsilon=1e-30):
-        """
-        Calculate the KL-divergence between a given discrete probability distribution `alphas`
-        and a discrete Gaussian Mixture Model.
+    def gtcc_loss(self,
+                  u,  # L_1 x D
+                  v): # L_2 x D
+        out_sim = F.cosine_similarity(u.unsqueeze(1), v.unsqueeze(0), dim=2)  # L_i x L_2
+        # out_sim = -torch.sqrt(2 - 2 * out_sim + 1e-6)
 
-        A symmetric version of KL-divergence is used: D = D_{KL}(P || Q) + D_{KL}(Q || P)
-        """
-        gmm_probabilities = self.gmm_probabilities(alphas.shape[0], component_means, component_variances, component_weights)
-        log_gmm = torch.log(gmm_probabilities + epsilon)  # L
-        log_alpha = torch.log(alphas + epsilon)  # L
-        log_likelihood_ratio = log_gmm - log_alpha
-        kl_divergence = gmm_probabilities * log_likelihood_ratio - alphas * log_likelihood_ratio  # L
-        # print('--------------------')
-        # print(kl_divergence)
-        # print(alphas)
-        # print(gmm_probabilities)
-        # print(gmm_probabilities.sum())
-        # print(component_means)
-        # print(component_weight_logits)
-        # print(variances)
-        # import pdb; pdb.set_trace()
-        return kl_divergence.sum()
+        alphas = F.softmax(out_sim, dim=-1)  # L_i x L_2
+        component_means, component_variances, component_weights = self.fit_gmm(alphas)  # L_i x K
+        snns = self.component_snns(v, component_means, component_variances)  # L_i x K x D
 
-    def fit_gaussian_mixture_model(self, alphas):
-        sequence_length = alphas.shape[0]
-        component_means = torch.arange(0,
-                                       sequence_length,
-                                       step=sequence_length / self.n_components,
-                                       device=self.device,
-                                       requires_grad=True)  # K
-        component_variances = torch.ones_like(component_means, requires_grad=True)  # K, all values 1
-        component_weight_logits = torch.zeros_like(component_means, requires_grad=True)  # K, all values initialized as 0
+        in_sim = F.cosine_similarity(snns.unsqueeze(1),  # L_i x 1 x K x D
+                                     u.unsqueeze(1).unsqueeze(0),  # 1 x L_1 x 1 x D
+                                     dim=-1)  # L_i x L_1 x K
+        # in_sim = -torch.sqrt(2 - 2 * in_sim + 1e-6)
 
-        optimizer = torch.optim.LBFGS(params=[component_means, component_variances, component_weight_logits],
+        mask = self.stochastic_window_mask(in_sim.shape[0])  # L_i x L_1
+        in_sim = in_sim.masked_fill(~mask.unsqueeze(-1), float('-inf'))
+
+        betas = F.softmax(in_sim, dim=1)
+
+        arange = torch.arange(betas.shape[0], device=self.device, dtype=self.dtype)  # L_1
+        mean_idx = torch.einsum('iuk, u -> ik', betas, arange)  # L_i x K
+        error = arange.unsqueeze(1).unsqueeze(0) - mean_idx.unsqueeze(1)  # (1 x L_1 x 1) - (L_i x 1 x K) -> L_i x L_1 x K
+        variances = torch.einsum('iuk, iuk -> ik', betas, torch.square(error))  # L_i x K
+
+        component_losses = torch.square(arange.unsqueeze(1) - mean_idx)  # L_i x K
+        if self.divide_by_variance:  # TODO: GTCC code doesn't do this but the paper mentions it. It seems unnecessary
+            component_losses /= variances
+        component_losses += 0.5 * self.tcc_lambda * torch.log(variances)
+
+        weighted_losses = torch.einsum('ik, ik -> i', component_losses, component_weights)
+        return weighted_losses
+
+
+    def fit_gmm(self,
+                alphas):  # L_i x L_2
+        orig_seq_length = alphas.shape[0]
+        sequence_length = alphas.shape[1]
+
+        step = sequence_length / self.n_components
+        component_means = torch.arange(start=step / 2,
+                                       end=sequence_length + step / 2,
+                                       step=step,
+                                       device=self.device) \
+            .unsqueeze(0) \
+            .expand(orig_seq_length, self.n_components) \
+            .clone() \
+            .requires_grad_(True)  # L_i x K
+
+        component_log_variances = torch.zeros_like(component_means, requires_grad=True)  # L_i x K
+        component_weight_logits = torch.zeros_like(component_means, requires_grad=True)  # L_i x K
+
+        weights = (component_means, component_log_variances, component_weight_logits)
+        optimizer = torch.optim.LBFGS(params=weights,
                                       max_iter=self.lbfgs_max_iters,
                                       lr=self.lbfgs_lr)
 
-        component_weights = self.softmax(component_weight_logits)  # Enforce a probability distribution
-
         def _closure():
             optimizer.zero_grad()
-            loss = self.kl_divergence(alphas, component_means, component_variances, component_weights)
+            with torch.enable_grad():
+                parameters = self.transform_parameters(*weights)
+                loss = self.kl_divergence(alphas, *parameters)
             loss.backward(retain_graph=True)
             return loss
 
         optimizer.step(_closure)
+        return self.transform_parameters(*weights)
 
-        return component_means, component_variances, component_weights
+    def transform_parameters(self, component_means, component_log_variances, component_weight_logits):
+        return (component_means,
+                torch.exp(component_log_variances),
+                F.softmax(component_weight_logits, dim=-1))
+
+    def component_probabilities(self,
+                                sequence_length,
+                                component_means,  # L_i x K
+                                component_variances):  # L_i x K
+        component_means = component_means.clamp(min=-1, max=sequence_length)
+
+        arange = torch.arange(0, sequence_length, device=self.device)  # L_2
+        dst = torch.square(arange.unsqueeze(0).unsqueeze(0)
+                           - component_means.unsqueeze(-1))  # L_i x K x L_2
+        gaussian_logits = -0.5 * dst / component_variances.unsqueeze(2)
+        gaussian_probabilities = F.softmax(gaussian_logits, dim=2)
+        return gaussian_probabilities  # L_1 x K x L_2
+
+
+    def gmm_probabilities(self,
+                          sequence_length,
+                          component_means,  # L_i x K
+                          component_variances,  # L_i x K
+                          component_weights):  # L_i x K
+        """
+        Calculate the probability distribution of a discrete Gaussian Mixture Model with K components
+        """
+        component_probabilities = self.component_probabilities(sequence_length,
+                                                               component_means,
+                                                               component_variances)  # L_1 x K x L_2
+        probabilities = torch.einsum('ikj, ik -> ij', component_probabilities, component_weights)  # L_1 x L_2
+        return probabilities
+
+    def kl_divergence(self,
+                      alphas,  # L_1 x L_2
+                      component_means,  # L_1 x K
+                      component_variances,  # L_1 x K
+                      component_weights,  # L_1 x K
+                      epsilon=1e-30):
+        sequence_length = alphas.shape[1]
+        gmm_probabilities = self.gmm_probabilities(sequence_length,
+                                                   component_means,
+                                                   component_variances,
+                                                   component_weights)  # L_1 x L_2
+        log_gmm = torch.log(gmm_probabilities + epsilon)  # L_1 x L_2
+        log_alpha = torch.log(alphas + epsilon)  # L_1 x L_2
+        log_likelihood_ratio = log_gmm - log_alpha  # L_1 x L_2
+        kl_divergence = gmm_probabilities * log_likelihood_ratio - alphas * log_likelihood_ratio  # L_1 x L_2
+        return kl_divergence.sum()  # scalar
 
 
 if __name__ == '__main__':
-    # L = GTCCLoss(n_components=50, lbfgs_max_iters=500, lbfgs_lr=0.01, tcc_lambda=0.5)
-    L = TCCLoss(tcc_lambda=0.5)
+    import sys
+    sys.path.insert(0, '../GTCC_CVPR2024/')
+    import utils.loss_functions as GTCC_losses
 
-    # alphas = torch.tensor([0.2, 0.3, 0.1, 0.6, 0.9, 0.4, 0.2, 0., 0.0])
-    # alphas = torch.tensor([0.])
-    # x = L.fit_gaussian_mixture_model(torch.nn.functional.softmax(alphas))
-    # print(x)
+    L = GTCCLoss(n_components=4, lbfgs_lr=0.5, lbfgs_max_iters=500, tcc_lambda=0.05, divide_by_variance=False, window_ratio=0.25)
 
-    u = torch.rand([9, 256])
-    v = torch.rand([1, 256])
-    i = 3
-    # q = L.gtcc_loss(i, u, v)
-    q = L.loss_regression(i, u, v)
-
-    print(q)
-
-    # import pdb; pdb.set_trace()
+    u = torch.tensor([[0.2,0.6,0.2],
+                     [0.5,0.2,0.6],
+                      [0.8,0.9,0.2],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                     [0.7,0.2,1.5]])
+    v = torch.tensor([[0.2,0.6,0.2],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,20.5,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.7,0.2,1.5]])
+    u = F.normalize(u, dim=-1)
+    v = F.normalize(v, dim=-1)
+    print('--------------------------------')
+    print('Ours (batched): ', L.gtcc_loss(u, v).sum())
+    print('--------------------------------')
+    print('Paper:', GTCC_losses.GTCC_loss([u, v], n_components=4, gamma=1, delta=0.25, alignment_variance=0.05, max_gmm_iters=500))
