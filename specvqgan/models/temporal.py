@@ -1,5 +1,9 @@
+import random
+
 import torch
+import torch.nn.functional as F
 import pytorch_lightning as pl
+
 
 class TCCLoss(pl.LightningModule):
 
@@ -12,30 +16,28 @@ class TCCLoss(pl.LightningModule):
         self.softmax = torch.nn.Softmax(dim=0)
 
     def tcc_similarities(self,
-                         i,  # index
                          u,  # L_1 x D
-                         v,  # L_2 x D
-                         temperature=1.0):
-        u_i = u[i]  # D
-        out_sim = self.cos_sim(u_i.unsqueeze(0), v)  # L_2
-        alphas = self.softmax(out_sim)  # L_2
-        snn = alphas.matmul(v)  # D
-        in_sim = self.cos_sim(snn.unsqueeze(0), u)  # L_1
-        betas = self.softmax(in_sim)
-        # import pdb; pdb.set_trace()
+                         v):  # L_2 x D
+        out_sim = F.cosine_similarity(u.unsqueeze(1), v.unsqueeze(0), dim=2)  # L_i x L_2
+        alphas = F.softmax(out_sim, dim=1)  # L_i x L_2
+        snn = alphas.matmul(v)  # L_i x D
+        in_sim = F.cosine_similarity(snn.unsqueeze(1), u.unsqueeze(0), dim=2)  # L_2
+        betas = F.softmax(in_sim, dim=1)  # L_1 x L_1
         return betas
 
-    def loss_classification(self, i, u, v):
-        betas = self.tcc_similarities(i, u, v)
-        return -1.0 * torch.log(betas[i])
+    def regression_loss(self,
+                        u,  # L_1 x D
+                        v):  # L_2 x D
+        betas = self.tcc_similarities(u, v)  # L_1 x L_1
+        arange = torch.arange(betas.shape[0]).to(betas.device)  # L_1
+        mean_idx = betas.mul(arange.unsqueeze(0)).sum(dim=1)  # L_1
+        variance = betas.matmul(torch.square(arange - mean_idx)) # L_1
+        loss = torch.square(arange - mean_idx) / variance \
+            + 0.5 * self.tcc_lambda * torch.log(variance)
+        return loss  # L_1
 
-    def loss_regression(self, i, u, v):
-        betas = self.tcc_similarities(i, u, v)  # L_1
-        idxs = torch.arange(betas.shape[0], device=self.device)  # L_1
-        mean_idx = betas.mul(idxs).sum()  # TODO use dot product
-        variance = torch.square(idxs - mean_idx).mul(betas).sum()  # TODO use dot product
-        loss = torch.square(i - mean_idx) / variance + 0.5 * self.tcc_lambda * torch.log(variance)
-        return loss
+
+
 
 
 class GTCCLoss(pl.LightningModule):
