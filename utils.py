@@ -13,4 +13,15 @@ def get_obj_from_str(string, reload=False):
 def instantiate_from_config(config):
     if not 'target' in config:
         raise KeyError('Expected key `target` to instantiate.')
-    return get_obj_from_str(config['target'])(**config.get('params', dict()))
+
+    if 'checkpoint' in config:
+        if 'params' in config:
+            print(f'Warning: params for {config.target} are ignored')
+        print(f'Loading {config.target} from {config.checkpoint}')
+        return get_obj_from_str(config['target']).load_from_checkpoint(config['checkpoint'])
+
+    if 'params' in config:
+        return get_obj_from_str(config['target'])(**config.get('params', dict()))
+
+
+    raise KeyError('Expected key `params` or `checkpoint` to instantiate.')
