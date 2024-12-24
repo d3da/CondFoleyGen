@@ -1,0 +1,53 @@
+model:
+  target: specvqgan.models.temporal_alignment_learning.TemporalAlignmentLearning
+  params:
+    audio_align_model_config:
+      target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
+      params:
+        input_size: 1024
+        output_size: 1024
+        n_layers: 4
+        dropout: 0.2
+    video_align_model_config:
+      target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
+      params:
+        input_size: 1024
+        output_size: 1024
+        n_layers: 4
+        dropout: 0.2
+    alignment_loss_config:
+      target: specvqgan.models.temporal.GTCCLoss
+      params:
+        n_components: 10
+        lbfgs_max_iters: 500
+        lbfgs_lr: 0.1
+        tcc_lambda: 0.05
+        window_ratio: 0.25
+        softmax_temperature: 0.1
+        gmm_min_variance: 0.5
+        divide_by_variance: False
+    optim_learn_rate: 1e-5
+    optim_weight_decay: 1e-7
+
+
+
+data:
+  target: specvqgan.data.gh2.GreatestHitEmbeddingSequenceDataModule
+  params:
+    batch_size: 1
+    shuffle_every_epoch: True
+    splits_path: data
+    data_path: data/greatesthit/vis-data
+    video_encoder_config:
+      target: specvqgan.data.gh2.DummyTensors
+      params: {}
+    audio_encoder_config:
+      target: specvqgan.data.gh2.DummyTensors
+      params: {}
+    embedding_save_dir: '/tmp/embeddings_test'
+    segment_duration_frames: 8
+    min_shift: 5
+    max_shift: 10
+    min_sequence_length: 10
+    max_sequence_length: 30
+    encoder_batch_size: 4
