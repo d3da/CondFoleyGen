@@ -12,6 +12,15 @@ class TCCLoss(pl.LightningModule):
         self.tcc_lambda = tcc_lambda
         self.softmax_temperature = softmax_temperature
 
+    def forward(self, batched_u, batched_v):
+        assert batched_u.shape[0] == batched_v.shape[0]
+
+        total = 0.
+        for u, v in zip(batched_u, batched_v):
+            total += self.regression_loss(u, v)
+
+        return total
+
     def tcc_similarities(self,
                          u,  # L_1 x D
                          v):  # L_2 x D
@@ -31,7 +40,7 @@ class TCCLoss(pl.LightningModule):
         variance = betas.matmul(torch.square(arange - mean_idx)) # L_1
         loss = torch.square(arange - mean_idx) / variance \
             + 0.5 * self.tcc_lambda * torch.log(variance)
-        return loss  # L_1
+        return loss.sum()
 
 
 class GTCCLoss(pl.LightningModule):
@@ -54,6 +63,15 @@ class GTCCLoss(pl.LightningModule):
         self.softmax_temperature = softmax_temperature
         self.gmm_min_variance = gmm_min_variance
         self.divide_by_variance = divide_by_variance
+
+    def forward(self, batched_u, batched_v):
+        assert batched_u.shape[0] == batched_v.shape[0]
+
+        total = 0.
+        for u, v in zip(batched_u, batched_v):
+            total += self.gtcc_loss(u, v)
+
+        return total
 
     def component_snns(self,
                        secondary_sequence,  # L_2 x D
@@ -123,7 +141,7 @@ class GTCCLoss(pl.LightningModule):
         component_losses += 0.5 * self.tcc_lambda * torch.log(variances)
 
         weighted_losses = torch.einsum('ik, ik -> i', component_losses, component_weights)
-        return weighted_losses
+        return weighted_losses.sum()
 
 
     def fit_gmm(self,

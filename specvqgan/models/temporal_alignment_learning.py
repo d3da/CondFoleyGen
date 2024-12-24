@@ -37,7 +37,7 @@ class TemporalAlignmentLearning(pl.LightningModule):
     def shared_step(self, batch, log_prefix):
         audio_emb, video_emb = batch
         import pdb; pdb.set_trace()
-        aligned_audio_emb, aligned_video_emb = self.audio_model(audio_emb), self.video_model(video_emb)
+        aligned_audio_emb, aligned_video_emb = self.audio_align_model(audio_emb), self.video_align_model(video_emb)
 
         loss = self.alignment_loss(aligned_audio_emb, aligned_video_emb)
         self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=audio_emb.shape[0])

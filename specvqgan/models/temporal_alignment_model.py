@@ -17,7 +17,7 @@ class LSTMAlignmentModel(pl.LightningModule):
                                   batch_first=True)
 
     def forward(self, x):
-        return self.lstm(x)
+        return self.lstm(x)[0]
 
 
 
