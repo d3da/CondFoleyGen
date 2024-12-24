@@ -7,22 +7,19 @@ import pytorch_lightning as pl
 
 class TCCLoss(pl.LightningModule):
 
-    def __init__(self, tcc_lambda):
+    def __init__(self, tcc_lambda, softmax_temperature):
         super().__init__()
-
         self.tcc_lambda = tcc_lambda
-
-        self.cos_sim = torch.nn.CosineSimilarity(dim=1)
-        self.softmax = torch.nn.Softmax(dim=0)
+        self.softmax_temperature = softmax_temperature
 
     def tcc_similarities(self,
                          u,  # L_1 x D
                          v):  # L_2 x D
         out_sim = F.cosine_similarity(u.unsqueeze(1), v.unsqueeze(0), dim=2)  # L_i x L_2
-        alphas = F.softmax(out_sim, dim=1)  # L_i x L_2
+        alphas = F.softmax(out_sim / self.softmax_temperature, dim=1)  # L_i x L_2
         snn = alphas.matmul(v)  # L_i x D
         in_sim = F.cosine_similarity(snn.unsqueeze(1), u.unsqueeze(0), dim=2)  # L_2
-        betas = F.softmax(in_sim, dim=1)  # L_1 x L_1
+        betas = F.softmax(in_sim / self.softmax_temperature, dim=1)  # L_1 x L_1
         return betas
 
     def regression_loss(self,
@@ -44,7 +41,9 @@ class GTCCLoss(pl.LightningModule):
                  lbfgs_lr: float,
                  tcc_lambda: float,
                  window_ratio: float,
-                 divide_by_variance: bool):
+                 softmax_temperature: float,
+                 gmm_min_variance: float = 0.1,
+                 divide_by_variance: bool = False):
         super().__init__()
 
         self.n_components = n_components
@@ -52,6 +51,8 @@ class GTCCLoss(pl.LightningModule):
         self.lbfgs_lr = lbfgs_lr
         self.tcc_lambda = tcc_lambda
         self.window_ratio = window_ratio
+        self.softmax_temperature = softmax_temperature
+        self.gmm_min_variance = gmm_min_variance
         self.divide_by_variance = divide_by_variance
 
     def component_snns(self,
@@ -97,7 +98,7 @@ class GTCCLoss(pl.LightningModule):
         out_sim = F.cosine_similarity(u.unsqueeze(1), v.unsqueeze(0), dim=2)  # L_i x L_2
         # out_sim = -torch.sqrt(2 - 2 * out_sim + 1e-6)
 
-        alphas = F.softmax(out_sim, dim=-1)  # L_i x L_2
+        alphas = F.softmax(out_sim / self.softmax_temperature, dim=-1)  # L_i x L_2
         component_means, component_variances, component_weights = self.fit_gmm(alphas)  # L_i x K
         snns = self.component_snns(v, component_means, component_variances)  # L_i x K x D
 
@@ -109,7 +110,7 @@ class GTCCLoss(pl.LightningModule):
         mask = self.stochastic_window_mask(in_sim.shape[0])  # L_i x L_1
         in_sim = in_sim.masked_fill(~mask.unsqueeze(-1), float('-inf'))
 
-        betas = F.softmax(in_sim, dim=1)
+        betas = F.softmax(in_sim / self.softmax_temperature, dim=1)
 
         arange = torch.arange(betas.shape[0], device=self.device, dtype=self.dtype)  # L_1
         mean_idx = torch.einsum('iuk, u -> ik', betas, arange)  # L_i x K
@@ -117,7 +118,7 @@ class GTCCLoss(pl.LightningModule):
         variances = torch.einsum('iuk, iuk -> ik', betas, torch.square(error))  # L_i x K
 
         component_losses = torch.square(arange.unsqueeze(1) - mean_idx)  # L_i x K
-        if self.divide_by_variance:  # TODO: GTCC code doesn't do this but the paper mentions it. It seems unnecessary
+        if self.divide_by_variance:
             component_losses /= variances
         component_losses += 0.5 * self.tcc_lambda * torch.log(variances)
 
@@ -146,29 +147,32 @@ class GTCCLoss(pl.LightningModule):
         weights = (component_means, component_log_variances, component_weight_logits)
         optimizer = torch.optim.LBFGS(params=weights,
                                       max_iter=self.lbfgs_max_iters,
-                                      lr=self.lbfgs_lr)
+                                      lr=self.lbfgs_lr,
+                                      line_search_fn='strong_wolfe')
+
+        def _transform_parameters(component_means,
+                                  component_log_variances,
+                                  component_weight_logits):
+            return (component_means.clamp(min=0, max=sequence_length),
+                    component_log_variances.exp() + self.gmm_min_variance,
+                    F.softmax(component_weight_logits, dim=-1))
 
         def _closure():
             optimizer.zero_grad()
             with torch.enable_grad():
-                parameters = self.transform_parameters(*weights)
+                parameters = _transform_parameters(*weights)
                 loss = self.kl_divergence(alphas, *parameters)
             loss.backward(retain_graph=True)
             return loss
 
         optimizer.step(_closure)
-        return self.transform_parameters(*weights)
+        return _transform_parameters(*weights)
 
-    def transform_parameters(self, component_means, component_log_variances, component_weight_logits):
-        return (component_means,
-                torch.exp(component_log_variances),
-                F.softmax(component_weight_logits, dim=-1))
 
     def component_probabilities(self,
                                 sequence_length,
                                 component_means,  # L_i x K
                                 component_variances):  # L_i x K
-        component_means = component_means.clamp(min=-1, max=sequence_length)
 
         arange = torch.arange(0, sequence_length, device=self.device)  # L_2
         dst = torch.square(arange.unsqueeze(0).unsqueeze(0)
@@ -214,8 +218,9 @@ if __name__ == '__main__':
     import sys
     sys.path.insert(0, '../GTCC_CVPR2024/')
     import utils.loss_functions as GTCC_losses
+    import time
 
-    L = GTCCLoss(n_components=4, lbfgs_lr=0.5, lbfgs_max_iters=500, tcc_lambda=0.05, divide_by_variance=False, window_ratio=0.25)
+    L = GTCCLoss(n_components=3, lbfgs_lr=0.5, lbfgs_max_iters=500, tcc_lambda=0.05, divide_by_variance=False, window_ratio=0.25, softmax_temperature=0.1, gmm_min_variance=0.5)
 
     u = torch.tensor([[0.2,0.6,0.2],
                      [0.5,0.2,0.6],
@@ -225,21 +230,33 @@ if __name__ == '__main__':
                       [0.5,0.2,0.6],
                       [0.5,0.2,0.6],
                       [0.5,0.2,0.6],
-                      [0.5,0.2,0.6],
-                      [0.5,0.2,0.6],
                      [0.7,0.2,1.5]])
     v = torch.tensor([[0.2,0.6,0.2],
-                      [0.5,0.2,0.6],
                       [0.5,0.2,0.6],
                       [0.5,0.2,0.6],
                       [0.5,20.5,0.6],
                       [0.5,0.2,0.6],
                       [0.5,0.2,0.6],
                       [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.5,0.2,0.6],
+                      [0.2,0.6,0.1],
                       [0.7,0.2,1.5]])
+
+    # u = torch.randn(38,256)
+    # v = torch.randn(31,256)
     u = F.normalize(u, dim=-1)
     v = F.normalize(v, dim=-1)
+    print(u.shape)
+    print(v.shape)
     print('--------------------------------')
-    print('Ours (batched): ', L.gtcc_loss(u, v).sum())
+    with torch.autograd.set_detect_anomaly(True):
+        start = time.time()
+        print('Ours (batched): ', L.gtcc_loss(u, v).sum())
+        print(f'Took {time.time() - start} seconds')
+
     print('--------------------------------')
-    print('Paper:', GTCC_losses.GTCC_loss([u, v], n_components=4, gamma=1, delta=0.25, alignment_variance=0.05, max_gmm_iters=500))
+    start = time.time()
+    print('Paper:', GTCC_losses.GTCC_loss([u, v], n_components=3, gamma=1, delta=0.25, alignment_variance=0.05, max_gmm_iters=500, softmax_temp=0.1))
+    print(f'Took {time.time() - start} seconds')
