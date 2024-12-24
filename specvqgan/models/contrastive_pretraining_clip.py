@@ -13,7 +13,6 @@ from utils import instantiate_from_config
 class ContrastiveSingleModality(pl.LightningModule):
     """
     Trains a single modality encoder (audio or video) by binding the embeddings to precomputed label embeddings.
-    Triplet loss is used
     """
     def __init__(self,
                  m_encoder_config,
@@ -93,7 +92,6 @@ class ContrastiveSingleModality(pl.LightningModule):
     def test_step(self, batch, *args, **kwargs):
         loss = self.shared_step(batch, 'test')
         return loss
-
 
 class SingleModalityTripletLoss(pl.LightningModule):
     """

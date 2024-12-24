@@ -1,5 +1,8 @@
 # import numpy as np
+import itertools
 import os
+from typing import Iterator
+
 import torch
 import json
 import pytorch_lightning as pl
@@ -7,6 +10,10 @@ import languagebind as lb
 import cv2
 import av
 import numpy as np
+import tqdm
+import random
+
+from utils import instantiate_from_config
 
 CONDFOLEYGEN_SR = 22050
 LANGUAGEBIND_VIDEO_NUM_FRAMES = 8
@@ -20,7 +27,7 @@ class GreatestHit(torch.utils.data.Dataset):
                  metadata_path,
                  duration=2.0,
                  n_frames=30,
-                 p_audio_aug=0.5,
+                 # p_audio_aug=0.5,
                  remove_single_hits=False,
                  remove_none_materials=False,
                  remove_none_actions=False,
@@ -31,7 +38,7 @@ class GreatestHit(torch.utils.data.Dataset):
         self.data_path = data_path
         self.duration = duration
         self.n_frames = n_frames
-        self.p_audio_aug = p_audio_aug
+        # self.p_audio_aug = p_audio_aug
         self.metadata_path = metadata_path
         self.remove_single_hits = remove_single_hits
         self.remove_none_material = remove_none_materials
@@ -209,58 +216,6 @@ class GreatestHit(torch.utils.data.Dataset):
 
         return pixel_values
 
-    # def _video_preprocess(self, video_path, start_time, end_time, num_frames):
-    #     if not self.preprocess_video:
-    #         return []
-
-    #     # cv2_vr = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
-    #     cv2_vr = cv2.VideoCapture(video_path)
-    
-    #     fps = cv2_vr.get(cv2.CAP_PROP_FPS)
-    #     total_frames = int(cv2_vr.get(cv2.CAP_PROP_FRAME_COUNT))
-    #     duration = total_frames / fps
-    #     start_time = max(0, start_time)
-    #     end_time = min(duration, end_time)
-    #     start_frame = int(start_time * fps)
-    #     end_frame = int(end_time * fps)
-        
-    #     # Generate frame indices for the desired segment
-    #     frame_id_list = np.linspace(start_frame, end_frame - 1, num_frames, dtype=int)
-
-    #     # Seek to the first frame needed
-    #     cv2_vr.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    #     current_frame = start_frame - 1
-
-    #     video_data = []
-    #     for frame_idx in frame_id_list:
-    #         # ret = False
-    #         while True:
-    #             current_frame += 1
-    #             ret, frame = cv2_vr.read()
-    #             if not ret or current_frame >= frame_idx:
-    #                 # reached target frame or end of video
-    #                 break
-
-    #         if not ret:
-    #             break
-
-    #         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # model expects R,G,B
-    #         video_data.append(torch.from_numpy(frame_rgb).permute(2, 0, 1))  # model expects C x H x W
-
-
-    #     if len(video_data) != len(frame_id_list):
-    #         raise Exception("Did not find all frames in video.")
-
-    #     cv2_vr.release()
-        
-    #     if len(video_data) == 0:
-    #         return []
-
-    #     video_data = torch.stack(video_data, dim=1)
-    #     pixel_values = self.video_preprocessor.transform(video_data)
-    #     return pixel_values
-
-
     def audio_preprocess(self, audio_path, start_time, end_time):
         if not self.preprocess_audio:
             return []
@@ -290,15 +245,22 @@ class GreatestHitDataModule(pl.LightningDataModule):
         pass
 
     def setup(self, stage=None):
-        self.train_dataset = GreatestHit('train', *self.args, **self.kwargs)
-        self.val_dataset   = GreatestHit('val',   *self.args, **self.kwargs)
-        self.test_dataset  = GreatestHit('test',  *self.args, **self.kwargs)
+        self.train_dataset = GreatestHit('train',
+                                         *self.args,
+                                         **self.kwargs)
+        self.val_dataset = GreatestHit('val',
+                                       *self.args,
+                                       **self.kwargs)
+        self.test_dataset = GreatestHit('test',
+                                        *self.args,
+                                        **self.kwargs)
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train_dataset,
                                            batch_size=self.batch_size,
                                            num_workers=self.num_workers,
-                                           shuffle=self.shuffle_every_epoch)
+                                           shuffle=self.shuffle_every_epoch,
+                                           pin_memory=True)
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(self.val_dataset,
@@ -311,3 +273,339 @@ class GreatestHitDataModule(pl.LightningDataModule):
                                            batch_size=self.batch_size,
                                            num_workers=self.num_workers,
                                            shuffle=False)
+
+
+
+
+class GreatestHitFullClips(pl.LightningDataModule):
+    def __init__(self,
+                 split,
+                 splits_path,
+                 data_path):
+        super().__init__()
+
+        self.split = split
+        self.splits_path = splits_path
+        self.data_path = data_path
+
+        if split == 'val':
+            split = 'valid'
+        split_filepath = os.path.join(splits_path, f'greatesthit_video_{split}.json')
+        with open(split_filepath, 'r') as split_file:
+            self.split_videos = json.load(split_file)
+
+        self.init_dataset()
+
+    def init_dataset(self):
+        self.dataset = []
+        for clip in self.split_videos:
+            # Test if the files exist
+            video_path, audio_path = self.get_video_path(clip), self.get_audio_path(clip)
+            if not os.path.isfile(video_path):
+                raise FileNotFoundError(f'Error: could not find video at {video_path}')
+            if not os.path.isfile(audio_path):
+                raise FileNotFoundError(f'Error: could not find audio at {audio_path}')
+
+            self.dataset.append({'clip': clip, 'video_path': video_path, 'audio_path': audio_path})
+
+        print(f'Dataset {self.split} contains {len(self.dataset)} videos')
+
+    def get_video_path(self, video):
+        return os.path.join(self.data_path, f'{video}_denoised.mp4')
+
+    def get_audio_path(self, video):
+        return os.path.join(self.data_path, f'{video}_denoised.wav')
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        return self.dataset[idx]
+
+
+
+class GreatestHitEmbeddingSequence(pl.LightningModule):
+    def __init__(self,
+                 split,
+                 splits_path,
+                 data_path,
+                 video_encoder_config,
+                 audio_encoder_config,
+                 embedding_save_dir,
+                 segment_duration_frames,
+                 min_shift,
+                 max_shift,
+                 min_sequence_length,
+                 max_sequence_length,
+                 encoder_batch_size):
+        super().__init__()
+
+        self.full_clip_dataset = GreatestHitFullClips(split=split, splits_path=splits_path, data_path=data_path)
+        self.video_encoder_config = video_encoder_config
+        self.audio_encoder_config = audio_encoder_config
+        self._video_encoder = None
+        self._audio_encoder = None
+
+        self.embedding_save_dir = embedding_save_dir
+
+        self.segment_duration_frames = segment_duration_frames
+        self.min_shift = min_shift
+        self.max_shift = max_shift
+        self.min_sequence_length = min_sequence_length
+        self.max_sequence_length = max_sequence_length
+
+        self.encoder_batch_size = encoder_batch_size
+
+        self._video_preprocessor = None
+        self._audio_preprocessor = None
+
+        if not os.path.isdir(self.embedding_save_dir):
+            os.makedirs(self.embedding_save_dir, exist_ok=True)
+
+    @property
+    def video_preprocessor(self):
+        if self._video_preprocessor is None:
+            video_config = lb.LanguageBindVideoConfig.from_pretrained('LanguageBind/LanguageBind_Video_FT',
+                                                                      cache_dir='./cache_dir')
+            video_config.vision_config.video_decode_backend = 'opencv'
+            self._video_preprocessor = lb.LanguageBindVideoProcessor(video_config)
+
+        return self._video_preprocessor
+
+    @property
+    def audio_preprocessor(self):
+        if self._audio_preprocessor is None:
+            audio_config = lb.LanguageBindAudioConfig.from_pretrained('LanguageBind/LanguageBind_Audio_FT',
+                                                                      cache_dir='./cache_dir')
+            self._audio_preprocessor = lb.LanguageBindAudioProcessor(audio_config)
+
+        return self._audio_preprocessor
+
+    @property
+    def video_encoder(self):
+        if self._video_encoder is None:
+            self._video_encoder = instantiate_from_config(self.video_encoder_config)
+            self._video_encoder.eval()
+        return self._video_encoder.to(device=self.device)
+
+    @property
+    def audio_encoder(self):
+        if self._audio_encoder is None:
+            self._audio_encoder = instantiate_from_config(self.audio_encoder_config)
+            self._audio_encoder.eval()
+        return self._audio_encoder.to(device=self.device)
+
+    def start_end_times(self, num_segments):
+        start_ends = [
+            (i * self.segment_duration, (i + 1) * self.segment_duration)
+            for i in range(num_segments)
+        ]
+        return start_ends
+
+    def embedding_save_path(self, clip):
+        return os.path.join(self.embedding_save_dir, f'{clip}.pt')
+
+
+    def video_rgb_frames_generator(self, video_path) -> Iterator[tuple[torch.Tensor, float]]:
+        print(f'Decoding {video_path}')
+        segment_frames = []
+        # num_segments = 0
+
+        with (av.open(video_path) as container):
+            new_segment = True
+            segment_start_time = 0
+            for i, frame in tqdm.tqdm(enumerate(container.decode(video=0)), total=container.streams[0].frames):
+
+                if new_segment:
+                    segment_start_time = frame.time
+                    new_segment = False
+
+                if i % self.segment_duration_frames == 0 and i != 0:
+                    yield (self.video_preprocessor.transform(torch.stack(segment_frames, dim=1)),  # C x T x H x W
+                           (segment_start_time, frame.time))  # (start_time, end_time) tuple
+                    segment_frames = []
+                    new_segment = True
+
+                frame_rgb = frame.to_rgb().to_ndarray()
+                frame_tensor = torch.from_numpy(frame_rgb).permute(2, 0, 1)  # Format as C x H x W for pytorch
+                segment_frames.append(frame_tensor)
+
+        # Drop the last segment
+        return
+
+
+    def batched_embed_videos(self, video_path) -> Iterator[tuple[torch.Tensor, list[tuple[float, float]]]]:
+        batch = []
+        batch_start_end_times = []
+        i = 0
+        for segment_frames, (start_time, end_time) in self.video_rgb_frames_generator(video_path):
+            if i % self.encoder_batch_size == 0 and i != 0:
+                batch_tensor = torch.stack(batch, dim=0).to(device=self.device)
+                with torch.inference_mode():
+                    embeddings_batch = self.video_encoder(batch_tensor)
+
+                yield embeddings_batch, batch_start_end_times
+                batch = []
+                batch_start_end_times = []
+
+            batch_start_end_times.append((start_time, end_time))
+            batch.append(segment_frames)
+
+            i += 1
+
+        batch_tensor = torch.stack(batch, dim=0)
+        with torch.inference_mode():
+            embeddings_batch = self.video_encoder(batch_tensor  )
+        yield embeddings_batch, batch_start_end_times
+
+    def preprocess_clip(self, clip_dict):
+        video_path = clip_dict['video_path']
+        audio_path = clip_dict['audio_path']
+
+        all_video_embeddings = []
+        all_audio_embeddings = []
+        for video_embeddings_batch, batch_start_end_times in self.batched_embed_videos(video_path):
+            audio_embeddings_batch = self.audio_embeddings(audio_path, batch_start_end_times)
+
+            all_video_embeddings.append(video_embeddings_batch)
+            all_audio_embeddings.append(audio_embeddings_batch)
+        return torch.cat(all_video_embeddings), torch.cat(all_audio_embeddings)
+
+
+    def audio_embeddings(self, audio_path, batch_start_end_times):
+        waveform, sample_rate = lb.audio.processing_audio.torchaudio_loader(audio_path)
+
+        preprocessed_frames = []
+        for start_time, end_time in batch_start_end_times:
+            start_frame = int(start_time * sample_rate)
+            end_frame = int(end_time * sample_rate)
+            waveform_sliced = waveform[:, start_frame:end_frame]
+            preprocessed_frames.append(self.audio_preprocessor.transform((waveform_sliced, sample_rate)))
+
+        with torch.inference_mode():
+            audio_embeddings = self.audio_encoder(torch.stack(preprocessed_frames, dim=0))
+        return audio_embeddings
+
+
+    def load_or_preprocess_clip(self, clip_dict) -> tuple[torch.Tensor, torch.Tensor]:
+        clip = clip_dict['clip']
+        save_path = self.embedding_save_path(clip)
+        if os.path.isfile(save_path):
+            print(f'Found {clip} on disk')
+            video_embeddings, audio_embeddings = torch.load(save_path)
+            return video_embeddings, audio_embeddings
+
+        video_embeddings, audio_embeddings = self.preprocess_clip(clip_dict)
+        torch.save((video_embeddings, audio_embeddings), save_path)
+        return video_embeddings, audio_embeddings
+
+
+    def random_shifted_sequence(self, original_sequence_length):
+        shift = random.randint(self.min_shift, self.max_shift)
+
+        remaining = original_sequence_length - shift
+        new_sequence_length = min(remaining, self.max_sequence_length)
+
+        assert new_sequence_length >= self.min_sequence_length
+        # TODO skip clips that are too short?
+
+        start_a, end_a = 0, new_sequence_length
+        start_b, end_b = shift, new_sequence_length + shift
+
+        if bool(random.getrandbits(1)):
+            return (start_a, end_a), (start_b, end_b)
+        else:
+            return (start_b, end_b), (start_a, end_a)
+
+
+    def __getitem__(self, item):
+        clip_dict = self.full_clip_dataset.__getitem__(item)
+
+        print(f'Getting item {item}')
+
+        video_embeddings, audio_embeddings = self.load_or_preprocess_clip(clip_dict)
+
+        num_segments = video_embeddings.shape[0]
+        assert audio_embeddings.shape[0] == num_segments
+
+        (video_start, video_end), (audio_start, audio_end) = self.random_shifted_sequence(num_segments)
+        sliced_video_embeddings = video_embeddings[video_start:video_end]
+        sliced_audio_embeddings = audio_embeddings[audio_start:audio_end]
+
+        return sliced_video_embeddings, sliced_audio_embeddings
+
+
+    def __len__(self):
+        return self.full_clip_dataset.__len__()
+
+
+class DummyTensors(pl.LightningModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+    def forward(self, inputs):
+        # inputs: B x C x T x W x H
+        batch_size = inputs.shape[0]
+        return torch.randn(batch_size, 1024, device=inputs.device)
+
+
+class GreatestHitEmbeddingSequenceDataModule(pl.LightningDataModule):
+    def __init__(self, batch_size, shuffle_every_epoch, *args, **kwargs):
+        super().__init__()
+        self.save_hyperparameters()
+        self.batch_size = batch_size
+        self.shuffle_every_epoch = shuffle_every_epoch
+
+        self.args = args
+        self.kwargs = kwargs
+        # print(args)
+        # print(kwargs)
+        # print('============')
+
+    def prepare_data(self):
+        pass
+
+    def setup(self, stage=None):
+        self.train_dataset = GreatestHitEmbeddingSequence('train', *self.args, **self.kwargs)
+        self.val_dataset =  GreatestHitEmbeddingSequence('val', *self.args, **self.kwargs)
+        self.test_dataset =  GreatestHitEmbeddingSequence('test', *self.args, **self.kwargs)
+
+    def train_dataloader(self):
+        return torch.utils.data.DataLoader(self.train_dataset,
+                                           batch_size=self.batch_size,
+                                           shuffle=self.shuffle_every_epoch,
+                                           pin_memory=True)
+
+    def val_dataloader(self):
+        return torch.utils.data.DataLoader(self.val_dataset,
+                                           batch_size=self.batch_size,
+                                           shuffle=False)
+
+    def test_dataloader(self):
+        return torch.utils.data.DataLoader(self.test_dataset,
+                                           batch_size=self.batch_size,
+                                           shuffle=False)
+
+if __name__ == '__main__':
+    x = GreatestHitEmbeddingSequence(
+        split='train',
+        splits_path='data',
+        video_encoder_config={
+            'target': 'specvqgan.models.contrastive_pretraining_clip.LB_VideoEncoder_PartiallyFrozen',
+            'params': {
+                'n_finetune_layers': 5
+            }
+        },
+        audio_encoder_config={},
+        embedding_save_dir='/tmp/embeddings_test',
+        segment_duration_frames=LANGUAGEBIND_VIDEO_NUM_FRAMES,
+        min_shift_frames=None,
+        max_shift_frames=None,
+        min_segments=None,
+        max_segments=None,
+        encoder_batch_size=10,
+    )
+
+    print([q for q in x])
+
+    import pdb; pdb.set_trace()
