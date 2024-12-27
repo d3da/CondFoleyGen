@@ -6,6 +6,7 @@ from utils import instantiate_from_config
 
 class TemporalAlignmentLearning(pl.LightningModule):
     def __init__(self,
+                 encoder_config,
                  audio_align_model_config,
                  video_align_model_config,
                  alignment_loss_config,
@@ -13,6 +14,8 @@ class TemporalAlignmentLearning(pl.LightningModule):
                  optim_weight_decay,
                  ):
         super().__init__()
+
+        self.encoder_model = instantiate_from_config(encoder_config)
 
         self.audio_align_model = instantiate_from_config(audio_align_model_config)
         self.video_align_model = instantiate_from_config(video_align_model_config)
@@ -35,12 +38,12 @@ class TemporalAlignmentLearning(pl.LightningModule):
         return {'optimizer': optimizer}
 
     def shared_step(self, batch, log_prefix):
-        audio_emb, video_emb = batch
-        import pdb; pdb.set_trace()
+        audio_emb, video_emb = self.encoder_model(batch)
+        audio_emb, video_emb = audio_emb.unsqueeze(0), video_emb.unsqueeze(0)
         aligned_audio_emb, aligned_video_emb = self.audio_align_model(audio_emb), self.video_align_model(video_emb)
 
         loss = self.alignment_loss(aligned_audio_emb, aligned_video_emb)
-        self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=audio_emb.shape[0])
+        self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=1)
         return loss
 
     def training_step(self, batch, *args, **kwargs):
@@ -49,7 +52,7 @@ class TemporalAlignmentLearning(pl.LightningModule):
 
     def validation_step(self, batch, *args, **kwargs):
         loss = self.shared_step(batch, 'validation')
-        self.log('hp_metric', loss)
+        self.log('hp_metric', loss, batch_size=1)
         return loss
 
     def test_step(self, batch, *args, **kwargs):

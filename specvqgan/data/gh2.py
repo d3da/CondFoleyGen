@@ -277,7 +277,7 @@ class GreatestHitDataModule(pl.LightningDataModule):
 
 
 
-class GreatestHitFullClips(pl.LightningDataModule):
+class GreatestHitFullClips(torch.utils.data.Dataset):
     def __init__(self,
                  split,
                  splits_path,
@@ -323,12 +323,50 @@ class GreatestHitFullClips(pl.LightningDataModule):
         return self.dataset[idx]
 
 
+class GreatestHitFullClipsDataModule(pl.LightningDataModule):
+
+    def __init__(self, shuffle_every_epoch, *args, **kwargs):
+        super().__init__()
+        self.shuffle_every_epoch = shuffle_every_epoch
+        self.args = args
+        self.kwargs = kwargs
+
+    def prepare_data(self):
+        pass
+
+    def setup(self, stage=None):
+        self.train_dataset = GreatestHitFullClips('train',
+                                                  *self.args,
+                                                  **self.kwargs)
+        self.val_dataset = GreatestHitFullClips('val',
+                                                *self.args,
+                                                **self.kwargs)
+        self.test_dataset = GreatestHitFullClips('test',
+                                                 *self.args,
+                                                 **self.kwargs)
+
+    def train_dataloader(self):
+        return torch.utils.data.DataLoader(self.train_dataset,
+                                           batch_size=None,
+                                           shuffle=self.shuffle_every_epoch,
+                                           pin_memory=True)
+
+    def val_dataloader(self):
+        return torch.utils.data.DataLoader(self.val_dataset,
+                                           batch_size=None,
+                                           shuffle=False,
+                                           pin_memory=True)
+
+    def test_dataloader(self):
+        return torch.utils.data.DataLoader(self.test_dataset,
+                                           batch_size=None,
+                                           shuffle=False,
+                                           pin_memory=True)
+
+
 
 class GreatestHitEmbeddingSequence(pl.LightningModule):
     def __init__(self,
-                 split,
-                 splits_path,
-                 data_path,
                  video_encoder_config,
                  audio_encoder_config,
                  embedding_save_dir,
@@ -340,7 +378,6 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
                  encoder_batch_size):
         super().__init__()
 
-        self.full_clip_dataset = GreatestHitFullClips(split=split, splits_path=splits_path, data_path=data_path)
         self.video_encoder_config = video_encoder_config
         self.audio_encoder_config = audio_encoder_config
         self._video_encoder = None
@@ -453,9 +490,9 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
 
             i += 1
 
-        batch_tensor = torch.stack(batch, dim=0)
+        batch_tensor = torch.stack(batch, dim=0).to(device=self.device)
         with torch.inference_mode():
-            embeddings_batch = self.video_encoder(batch_tensor  )
+            embeddings_batch = self.video_encoder(batch_tensor)
         yield embeddings_batch, batch_start_end_times
 
     def preprocess_clip(self, clip_dict):
@@ -483,7 +520,8 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
             preprocessed_frames.append(self.audio_preprocessor.transform((waveform_sliced, sample_rate)))
 
         with torch.inference_mode():
-            audio_embeddings = self.audio_encoder(torch.stack(preprocessed_frames, dim=0))
+            raw_audio = torch.stack(preprocessed_frames, dim=0).to(device=self.device)
+            audio_embeddings = self.audio_encoder(raw_audio)
         return audio_embeddings
 
 
@@ -491,7 +529,6 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         clip = clip_dict['clip']
         save_path = self.embedding_save_path(clip)
         if os.path.isfile(save_path):
-            print(f'Found {clip} on disk')
             video_embeddings, audio_embeddings = torch.load(save_path)
             return video_embeddings, audio_embeddings
 
@@ -518,25 +555,23 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
             return (start_b, end_b), (start_a, end_a)
 
 
-    def __getitem__(self, item):
-        clip_dict = self.full_clip_dataset.__getitem__(item)
+    def forward(self, batch):
 
-        print(f'Getting item {item}')
+        print(batch)
+        return self.load_all_embeddings(batch)
 
-        video_embeddings, audio_embeddings = self.load_or_preprocess_clip(clip_dict)
+    def load_all_embeddings(self, path):
+        video_embeddings, audio_embeddings = self.load_or_preprocess_clip(path)
 
         num_segments = video_embeddings.shape[0]
         assert audio_embeddings.shape[0] == num_segments
 
         (video_start, video_end), (audio_start, audio_end) = self.random_shifted_sequence(num_segments)
-        sliced_video_embeddings = video_embeddings[video_start:video_end]
-        sliced_audio_embeddings = audio_embeddings[audio_start:audio_end]
+        sliced_video_embeddings = video_embeddings[video_start:video_end].to(device=self.device)
+        sliced_audio_embeddings = audio_embeddings[audio_start:audio_end].to(device=self.device)
 
         return sliced_video_embeddings, sliced_audio_embeddings
 
-
-    def __len__(self):
-        return self.full_clip_dataset.__len__()
 
 
 class DummyTensors(pl.LightningModule):

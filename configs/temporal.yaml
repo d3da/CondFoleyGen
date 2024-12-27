@@ -1,18 +1,39 @@
 model:
   target: specvqgan.models.temporal_alignment_learning.TemporalAlignmentLearning
   params:
+    encoder_config:
+      target: specvqgan.data.gh2.GreatestHitEmbeddingSequence
+      params:
+        video_encoder_config:
+          #target: specvqgan.data.gh2.DummyTensors
+          #params: {}
+          target: 'specvqgan.models.contrastive_pretraining_clip.ContrastiveSingleModality'
+          checkpoint: 'lightning_logs/version_324028/checkpoints/epoch=25-step=2418-hp_metric=3.6248340606689453.ckpt'
+        audio_encoder_config:
+          #target: specvqgan.data.gh2.DummyTensors
+          #params: {}
+          target: 'specvqgan.models.contrastive_pretraining_clip.ContrastiveSingleModality'
+          checkpoint: 'lightning_logs/version_323840/checkpoints/epoch=67-step=6324-hp_metric=3.6003406047821045.ckpt'
+        embedding_save_dir: '/local/s2014203/embedding_sequences_v1'
+        segment_duration_frames: 8
+        min_shift: 5
+        max_shift: 10
+        min_sequence_length: 10
+        max_sequence_length: 30
+        encoder_batch_size: 4
+
     audio_align_model_config:
       target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
       params:
-        input_size: 1024
-        output_size: 1024
+        input_size: 768
+        output_size: 768
         n_layers: 4
         dropout: 0.2
     video_align_model_config:
       target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
       params:
-        input_size: 1024
-        output_size: 1024
+        input_size: 768
+        output_size: 768
         n_layers: 4
         dropout: 0.2
     alignment_loss_config:
@@ -32,22 +53,8 @@ model:
 
 
 data:
-  target: specvqgan.data.gh2.GreatestHitEmbeddingSequenceDataModule
+  target: specvqgan.data.gh2.GreatestHitFullClipsDataModule
   params:
-    batch_size: 1
     shuffle_every_epoch: True
     splits_path: data
-    data_path: data/greatesthit/vis-data
-    video_encoder_config:
-      target: specvqgan.data.gh2.DummyTensors
-      params: {}
-    audio_encoder_config:
-      target: specvqgan.data.gh2.DummyTensors
-      params: {}
-    embedding_save_dir: '/tmp/embeddings_test'
-    segment_duration_frames: 8
-    min_shift: 5
-    max_shift: 10
-    min_sequence_length: 10
-    max_sequence_length: 30
-    encoder_batch_size: 4
+    data_path: '/local/s2014203/vis-data'
