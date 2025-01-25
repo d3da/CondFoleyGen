@@ -55,6 +55,8 @@ model:
 data:
   target: specvqgan.data.gh2.GreatestHitFullClipsDataModule
   params:
+    batch_size: 32
+    num_workers: 4
     shuffle_every_epoch: True
     splits_path: data
     data_path: '/local/s2014203/vis-data'

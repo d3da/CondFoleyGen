@@ -325,11 +325,14 @@ class GreatestHitFullClips(torch.utils.data.Dataset):
 
 class GreatestHitFullClipsDataModule(pl.LightningDataModule):
 
-    def __init__(self, shuffle_every_epoch, *args, **kwargs):
+    def __init__(self, batch_size, shuffle_every_epoch, num_workers, *args, **kwargs):
         super().__init__()
+        self.batch_size = batch_size
         self.shuffle_every_epoch = shuffle_every_epoch
+        self.num_workers = num_workers
         self.args = args
         self.kwargs = kwargs
+        self.collate_fn = lambda x: x
 
     def prepare_data(self):
         pass
@@ -347,23 +350,28 @@ class GreatestHitFullClipsDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train_dataset,
-                                           batch_size=None,
+                                           batch_size=self.batch_size,
+                                           collate_fn=self.collate_fn,
                                            shuffle=self.shuffle_every_epoch,
-                                           pin_memory=True)
+                                           num_workers=self.num_workers)
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(self.val_dataset,
-                                           batch_size=None,
+                                           batch_size=self.batch_size,
+                                           collate_fn=self.collate_fn,
                                            shuffle=False,
-                                           pin_memory=True)
+                                           num_workers=self.num_workers)
 
     def test_dataloader(self):
         return torch.utils.data.DataLoader(self.test_dataset,
-                                           batch_size=None,
+                                           batch_size=self.batch_size,
+                                           collate_fn=self.collate_fn,
                                            shuffle=False,
-                                           pin_memory=True)
+                                           num_workers=self.num_workers)
 
-
+class SequenceTooShortError(Exception):
+    def __init__(self, *args):
+        super().__init__(*args)
 
 class GreatestHitEmbeddingSequence(pl.LightningModule):
     def __init__(self,
@@ -543,7 +551,10 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         remaining = original_sequence_length - shift
         new_sequence_length = min(remaining, self.max_sequence_length)
 
-        assert new_sequence_length >= self.min_sequence_length
+        # assert new_sequence_length >= self.min_sequence_length
+        if new_sequence_length < self.min_sequence_length:
+            print(f'Warning: Random sequence of length {new_sequence_length} is too short.')
+            raise SequenceTooShortError()
         # TODO skip clips that are too short?
 
         start_a, end_a = 0, new_sequence_length
@@ -556,8 +567,6 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
 
 
     def forward(self, batch):
-
-        print(batch)
         return self.load_all_embeddings(batch)
 
     def load_all_embeddings(self, path):
@@ -566,12 +575,16 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         num_segments = video_embeddings.shape[0]
         assert audio_embeddings.shape[0] == num_segments
 
-        (video_start, video_end), (audio_start, audio_end) = self.random_shifted_sequence(num_segments)
+        try:
+            (video_start, video_end), (audio_start, audio_end) = self.random_shifted_sequence(num_segments)
+        except SequenceTooShortError:
+            print(f'Path: {path}')
+            return None, None
+
         sliced_video_embeddings = video_embeddings[video_start:video_end].to(device=self.device)
         sliced_audio_embeddings = audio_embeddings[audio_start:audio_end].to(device=self.device)
 
         return sliced_video_embeddings, sliced_audio_embeddings
-
 
 
 class DummyTensors(pl.LightningModule):

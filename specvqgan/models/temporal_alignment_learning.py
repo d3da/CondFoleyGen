@@ -38,9 +38,23 @@ class TemporalAlignmentLearning(pl.LightningModule):
         return {'optimizer': optimizer}
 
     def shared_step(self, batch, log_prefix):
-        audio_emb, video_emb = self.encoder_model(batch)
-        audio_emb, video_emb = audio_emb.unsqueeze(0), video_emb.unsqueeze(0)
-        aligned_audio_emb, aligned_video_emb = self.audio_align_model(audio_emb), self.video_align_model(video_emb)
+        audio_embeddings, video_embeddings = [], []
+        for clip_dict in batch:
+            audio_emb, video_emb = self.encoder_model(clip_dict)
+            if audio_emb is None or video_emb is None:
+                continue
+            audio_embeddings.append(audio_emb)
+            video_embeddings.append(video_emb)
+
+        if len(audio_embeddings) == 0 or len(video_embeddings) == 0:
+            return None
+
+        audio_embeddings = torch.stack(audio_embeddings)
+        video_embeddings = torch.stack(video_embeddings)
+
+        # audio_emb, video_emb = audio_emb.unsqueeze(0), video_emb.unsqueeze(0)
+        aligned_audio_emb = self.audio_align_model(audio_embeddings)
+        aligned_video_emb = self.video_align_model(video_embeddings)
 
         loss = self.alignment_loss(aligned_audio_emb, aligned_video_emb)
         self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=1)

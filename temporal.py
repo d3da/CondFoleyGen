@@ -5,7 +5,7 @@ import torch
 import sys
 print(sys.path)
 
-sys.path.insert(0, '/')
+#sys.path.insert(0, '/')
 sys.path.append('../LanguageBind/')
 
 
