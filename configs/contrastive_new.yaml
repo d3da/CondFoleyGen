@@ -19,7 +19,7 @@ model:
 data:
   target: specvqgan.data.gh2.GreatestHitDataModule
   params:
-    data_path: 'data/greatesthit/vis-data'
+    data_path: '/local/s2014203/vis-data'
     splits_path: 'data'
     metadata_path: 'data/info_r2plus1d_dim1024_15fps.json'
     batch_size: 4

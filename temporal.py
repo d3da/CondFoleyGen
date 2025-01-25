@@ -16,7 +16,7 @@ def main():
     torch.cuda.empty_cache()
     torch.set_float32_matmul_precision("high")
 
-    conf = OmegaConf.load('configs/temporal.yaml')
+    conf = OmegaConf.load('configs/temporal/temporal.yaml')
     model = instantiate_from_config(conf.model)
     data = instantiate_from_config(conf.data)
 

@@ -1,19 +1,21 @@
 model:
-  target: specvqgan.models.temporal_alignment_learning.TemporalAlignmentLearning
+  target: foley2025.temporal.alignment_learning.TemporalAlignmentLearning
   params:
     encoder_config:
-      target: specvqgan.data.gh2.GreatestHitEmbeddingSequence
+      target: foley2025.data.greatest_hits.GreatestHitEmbeddingSequence
       params:
         video_encoder_config:
           #target: specvqgan.data.gh2.DummyTensors
           #params: {}
-          target: 'specvqgan.models.contrastive_pretraining_clip.ContrastiveSingleModality'
-          checkpoint: 'lightning_logs/version_324028/checkpoints/epoch=25-step=2418-hp_metric=3.6248340606689453.ckpt'
+          target: 'foley2025.contrastive.encoder.ContrastiveSingleModality'
+          #checkpoint: 'lightning_logs/version_324028/checkpoints/epoch=25-step=2418-hp_metric=3.6248340606689453.ckpt'
+          checkpoint: 'checkpoints/video_encoder_finetuned.ckpt'
         audio_encoder_config:
           #target: specvqgan.data.gh2.DummyTensors
           #params: {}
-          target: 'specvqgan.models.contrastive_pretraining_clip.ContrastiveSingleModality'
-          checkpoint: 'lightning_logs/version_323840/checkpoints/epoch=67-step=6324-hp_metric=3.6003406047821045.ckpt'
+          target: 'foley2025.contrastive.encoder.ContrastiveSingleModality'
+          #checkpoint: 'lightning_logs/version_323840/checkpoints/epoch=67-step=6324-hp_metric=3.6003406047821045.ckpt'
+          checkpoint: 'checkpoints/audio_encoder_finetuned.ckpt'
         encoder_batch_size: 16
         segment_duration_frames: 8
         embedding_save_dir: '/local/s2014203/embedding_sequences_v1'
@@ -23,7 +25,7 @@ model:
         max_sequence_length: 30
 
     audio_align_model_config:
-      target: specvqgan.models.temporal_alignment_model.FullyConnectedAlignmentModel
+      target: foley2025.temporal.alignment_model.FullyConnectedAlignmentModel
       params:
         input_size: 768
         output_size: 768
@@ -45,14 +47,21 @@ model:
 #        n_layers: 4
 #        dropout: 0.2
     video_align_model_config:
-      target: specvqgan.models.temporal_alignment_model.TransformerAlignmentModel
+      target: foley2025.temporal.alignment_model.FullyConnectedAlignmentModel
       params:
         input_size: 768
         output_size: 768
-        n_layers: 8
-        sequence_length: 30
-        num_heads: 8
+        hidden_size: 1024
+        n_layers: 4
         dropout: 0.2
+#      target: foley2025.temporal.alignment_model.TransformerAlignmentModel
+#      params:
+#        input_size: 768
+#        output_size: 768
+#        n_layers: 8
+#        sequence_length: 30
+#        num_heads: 8
+#        dropout: 0.2
 #      target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
 #      params:
 #        input_size: 768
@@ -70,7 +79,7 @@ model:
 #        softmax_temperature: 0.1
 #        gmm_min_variance: 0.5
 #        divide_by_variance: False
-      target: specvqgan.models.temporal.TCCLoss
+      target: foley2025.temporal.loss.TCCLoss
       params:
         tcc_lambda: 0.05
         softmax_temperature: 0.1
@@ -78,7 +87,7 @@ model:
     optim_weight_decay: 1e-9
 
 data:
-  target: specvqgan.data.gh2.GreatestHitFullClipsDataModule
+  target: foley2025.data.greatest_hits.GreatestHitFullClipsDataModule
   params:
     batch_size: 32
     num_workers: 4

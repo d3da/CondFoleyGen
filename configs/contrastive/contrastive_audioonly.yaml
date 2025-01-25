@@ -2,9 +2,9 @@
 model:
   target: specvqgan.models.contrastive_pretraining_clip.ContrastiveSingleModality
   params:
-    m_key: 'video'
+    m_key: 'audio'
     m_encoder_config:
-      target: specvqgan.models.contrastive_pretraining_clip.LB_VideoEncoder_PartiallyFrozen
+      target: specvqgan.models.contrastive_pretraining_clip.LB_AudioEncoder_PartiallyFrozen
       params:
         n_finetune_layers: 5
     loss_config:
@@ -12,22 +12,21 @@ model:
       params:
         use_label_mask: True
     label_embeddings_path: 'data/GH_label_embeddings.pt'
-    optim_learn_rate: 1e-3
+    optim_learn_rate: 1e-4
     optim_weight_decay: 1e-4
 
 data:
   target: specvqgan.data.gh2.GreatestHitDataModule
   params:
     data_path: '/local/s2014203/vis-data'
-    #data_path: '/home/s2014203/MSc/vis-data'
     splits_path: 'data'
     metadata_path: 'data/info_r2plus1d_dim1024_15fps.json'
-    batch_size: 32
+    batch_size: 256
     num_workers: 16
     shuffle_every_epoch: True
     remove_single_hits: False
     remove_none_materials: True
     remove_none_actions: True
-    preprocess_video: True
-    preprocess_audio: False
-    
+    preprocess_video: False
+    preprocess_audio: True
+
