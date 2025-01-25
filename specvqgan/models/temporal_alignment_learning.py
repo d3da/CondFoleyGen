@@ -24,6 +24,8 @@ class TemporalAlignmentLearning(pl.LightningModule):
         self.optim_learn_rate = optim_learn_rate
         self.optim_weight_decay = optim_weight_decay
 
+        self.save_hyperparameters()
+
     def forward(self, x):
         return self.model(x)
 

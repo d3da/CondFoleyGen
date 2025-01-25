@@ -12,6 +12,8 @@ class TCCLoss(pl.LightningModule):
         self.tcc_lambda = tcc_lambda
         self.softmax_temperature = softmax_temperature
 
+        self.save_hyperparameters()
+
     def forward(self, batched_u, batched_v):
         assert batched_u.shape[0] == batched_v.shape[0]
 
@@ -63,6 +65,8 @@ class GTCCLoss(pl.LightningModule):
         self.softmax_temperature = softmax_temperature
         self.gmm_min_variance = gmm_min_variance
         self.divide_by_variance = divide_by_variance
+
+        self.save_hyperparameters()
 
     def forward(self, batched_u, batched_v):
         assert batched_u.shape[0] == batched_v.shape[0]

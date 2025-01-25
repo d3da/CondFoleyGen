@@ -14,43 +14,68 @@ model:
           #params: {}
           target: 'specvqgan.models.contrastive_pretraining_clip.ContrastiveSingleModality'
           checkpoint: 'lightning_logs/version_323840/checkpoints/epoch=67-step=6324-hp_metric=3.6003406047821045.ckpt'
-        embedding_save_dir: '/local/s2014203/embedding_sequences_v1'
+        encoder_batch_size: 16
         segment_duration_frames: 8
+        embedding_save_dir: '/local/s2014203/embedding_sequences_v1'
         min_shift: 5
-        max_shift: 10
-        min_sequence_length: 10
+        max_shift: 15
+        min_sequence_length: 30
         max_sequence_length: 30
-        encoder_batch_size: 4
 
     audio_align_model_config:
-      target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
+      target: specvqgan.models.temporal_alignment_model.FullyConnectedAlignmentModel
       params:
         input_size: 768
         output_size: 768
+        hidden_size: 1024
         n_layers: 4
         dropout: 0.2
+#      target: specvqgan.models.temporal_alignment_model.TransformerAlignmentModel
+#      params:
+#        input_size: 768
+#        output_size: 768
+#        n_layers: 8
+#        sequence_length: 30
+#        num_heads: 8
+#        dropout: 0.2
+#      target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
+#      params:
+#        input_size: 768
+#        output_size: 768
+#        n_layers: 4
+#        dropout: 0.2
     video_align_model_config:
-      target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
+      target: specvqgan.models.temporal_alignment_model.TransformerAlignmentModel
       params:
         input_size: 768
         output_size: 768
-        n_layers: 4
+        n_layers: 8
+        sequence_length: 30
+        num_heads: 8
         dropout: 0.2
+#      target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
+#      params:
+#        input_size: 768
+#        output_size: 768
+#        n_layers: 4
+#        dropout: 0.2
     alignment_loss_config:
-      target: specvqgan.models.temporal.GTCCLoss
+#      target: specvqgan.models.temporal.GTCCLoss
+#      params:
+#        n_components: 10
+#        lbfgs_max_iters: 500
+#        lbfgs_lr: 0.1
+#        tcc_lambda: 0.05
+#        window_ratio: 0.25
+#        softmax_temperature: 0.1
+#        gmm_min_variance: 0.5
+#        divide_by_variance: False
+      target: specvqgan.models.temporal.TCCLoss
       params:
-        n_components: 10
-        lbfgs_max_iters: 500
-        lbfgs_lr: 0.1
         tcc_lambda: 0.05
-        window_ratio: 0.25
         softmax_temperature: 0.1
-        gmm_min_variance: 0.5
-        divide_by_variance: False
-    optim_learn_rate: 1e-5
-    optim_weight_decay: 1e-7
-
-
+    optim_learn_rate: 1e-6
+    optim_weight_decay: 1e-9
 
 data:
   target: specvqgan.data.gh2.GreatestHitFullClipsDataModule
