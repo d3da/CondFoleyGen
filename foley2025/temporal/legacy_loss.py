@@ -16,7 +16,17 @@ class TCCLoss(pl.LightningModule):
         self.softmax_temp = softmax_temperature
         self.normalizer = nn.Softmax(dim=0)
 
-    def forward(self, sequences):
+    def forward(self, batched_u, batched_v):
+        assert batched_u.shape[0] == batched_v.shape[0]
+
+        total = 0.
+        for u, v in zip(batched_u, batched_v):
+            total += self.tcc_loss(u, v)
+
+        return total
+
+
+    def tcc_loss(self, *sequences):
         # loss term 2 is TCC loss
         tcc_count = 0
         all_tcc_losses = None
@@ -28,19 +38,27 @@ class TCCLoss(pl.LightningModule):
             ###################################################
             ### iterate through secondary sequences
             for j, secondary in enumerate(sequences):
+
+                if i == j:
+                    continue
+
+
                 secondary = secondary.to(self.device)
                 #################################
                 # get intermittent variables
-                ALPHA = self.normalizer(-torch.cdist(primary, secondary, p=2).T / self.softmax_temp).T
+                ########ALPHA = self.normalizer(-torch.cdist(primary, secondary, p=2).T / self.softmax_temp).T
+                ALPHA = self.normalizer(nn.functional.cosine_similarity(primary.unsqueeze(1), secondary.unsqueeze(0), dim=2).T / self.softmax_temp).T
                 SNN = ALPHA @ secondary
-                BETA = self.normalizer(-torch.cdist(SNN, primary, p=2).T / self.softmax_temp).T
+                #########BETA = self.normalizer(-torch.cdist(SNN, primary, p=2).T / self.softmax_temp).T
+                BETA = self.normalizer(nn.functional.cosine_similarity(SNN.unsqueeze(1), primary.unsqueeze(0), dim=2).T / self.softmax_temp).T
                 mus = BETA @ idx_range
                 variances = BETA @ torch.square(idx_range - mus)
                 
                 #################################
                 # get TCC loss
                 loss_terms = torch.divide(torch.square(idx_range - mus), variances) + self.alignment_variance * torch.log(torch.sqrt(variances) + 1e-20)
-                
+
+
                 if all_tcc_losses is None:
                     all_tcc_losses = torch.sum(loss_terms) 
                 else: 
@@ -49,122 +67,139 @@ class TCCLoss(pl.LightningModule):
         return all_tcc_losses / tcc_count
 
 
-class LegacyGTCC(pl.LightningModule):
-    def __init__(self, n_components, gamma, delta, dropouts, softmax_temp, alignment_variance, max_gmm_iters, epoch):
+class GTCCLoss(pl.LightningModule):
+    def __init__(self,
+                 n_components,
+                 window_ratio,
+                 softmax_temperature,
+                 tcc_lambda,
+                 max_gmm_iters,
+                 lbfgs_max_iters,
+                 gamma = 1.0,
+                 dropouts = None,
+                 epoch = None):
         super().__init__()
 
         self.n_components = n_components
         self.gamma = gamma
-        self.delta = delta
+        self.delta = window_ratio
         self.dropouts = dropouts
-
-        self.softmax_temp = softmax_temp
-        self.alignment_variance = alignment_variance
+        self.softmax_temp = softmax_temperature
+        self.alignment_variance = tcc_lambda
         self.max_gmm_iters = max_gmm_iters
         self.epoch = epoch
 
+    def forward(self, batched_u, batched_v):
+        assert batched_u.shape[0] == batched_v.shape[0]
 
-def GTCC_loss(self, sequences):
-    assert .05 <= self.delta <= 1
-    tiny_number = 0
-    all_tcc_losses = None
-    drop_min = self.gamma**(self.epoch + 1)
-    ###################################################
-    ### iterate through primary sequences
-    for i, primary in enumerate(sequences):
-        primary = primary.to(self.device)
-        N = primary.shape[0]
-        margin = round(N * self.delta)
+        total = 0.
+        for u, v in zip(batched_u, batched_v):
+            total += self.gtcc_loss(u, v)
 
-        max_comparisons = 20
-        indices_to_check = torch.randperm(N)[:max_comparisons].to(self.device).sort().values
-        ind_bool = torch.zeros(N, dtype=torch.bool).to(self.device)
-        ind_bool[indices_to_check] = True
-        del indices_to_check
-        idx_range = torch.arange(0, N, dtype=torch.float).to(self.device).detach()
-        indbool_idx_range = idx_range[ind_bool]
-        margin_identity = create_stochastic_margin_identity_matrix(N, margin).to(self.device)[ind_bool]
+        return total
 
+
+    def gtcc_loss(self, *sequences):
+        assert .05 <= self.delta <= 1
+        tiny_number = 0
+        all_tcc_losses = None
+        #drop_min = self.gamma**(self.epoch + 1)
         ###################################################
-        ### iterate through secondary sequences
-        for j, secondary in enumerate(sequences):
-            if i == j: # skip if same sequence
-                continue
-            M = secondary.shape[0]
-            # get the drop vectors!
-            if self.gamma < 1:
-                BX = primary @ self.dropouts[j][:-1].squeeze() + self.dropouts[j][-1]
-                BX = (BX - BX.mean()) / BX.std()
-                BX = drop_min + (1-drop_min) * nn.Sigmoid()(BX)[ind_bool]
-            
-            secondary = secondary.to(self.device)
-            cdist = torch.cdist(primary, secondary, p=2)[ind_bool]
-            ALPHA_exp = torch.exp(-cdist / self.softmax_temp) + tiny_number
-            ALPHA = (ALPHA_exp.T / (ALPHA_exp.sum(dim=1))).T
-            
-            gmm = torch.zeros((ALPHA.shape[0], self.n_components, M)).to(self.device)
-            spread = torch.zeros((ALPHA.shape[0], self.n_components)).to(self.device)
-            for u in range(ALPHA.shape[0]):
-                start = time.time()
-                g, s, _ = get_gmm_lfbgf(
-                    ALPHA[u], self.n_components, max_iters=self.max_gmm_iters
-                )
-                g = g.to(self.device)
-                s = s.to(self.device)
-
-                gmm[u] = g
-                spread[u] = s
+        ### iterate through primary sequences
+        for i, primary in enumerate(sequences):
+            primary = primary.to(self.device)
+            N = primary.shape[0]
+            margin = round(N * self.delta)
+    
+            max_comparisons = 20
+            indices_to_check = torch.randperm(N)[:max_comparisons].to(self.device).sort().values
+            ind_bool = torch.zeros(N, dtype=torch.bool).to(self.device)
+            ind_bool[indices_to_check] = True
+            del indices_to_check
+            idx_range = torch.arange(0, N, dtype=torch.float).to(self.device).detach()
+            indbool_idx_range = idx_range[ind_bool]
+            margin_identity = create_stochastic_margin_identity_matrix(N, margin).to(self.device)[ind_bool]
+    
+            ###################################################
+            ### iterate through secondary sequences
+            for j, secondary in enumerate(sequences):
+                if i == j: # skip if same sequence
+                    continue
+                M = secondary.shape[0]
+                # get the drop vectors!
+                #if self.gamma < 1:
+                #    BX = primary @ self.dropouts[j][:-1].squeeze() + self.dropouts[j][-1]
+                #    BX = (BX - BX.mean()) / BX.std()
+                #    BX = drop_min + (1-drop_min) * nn.Sigmoid()(BX)[ind_bool]
                 
-            SNNs = (gmm @ secondary)
-            prim_expanded = primary.unsqueeze(0)
-            snn_cdist = torch.cdist(SNNs, prim_expanded, p=2)
-
-            BETAs = (margin_identity * torch.exp(-snn_cdist / self.softmax_temp).permute(1,0,2)).permute(1, 0, 2) + tiny_number
-            BETAs = (BETAs.permute(2, 0, 1) / (BETAs.sum(dim=2) + 1e-6)).permute(1, 2, 0)
-
-            mus = (BETAs @ idx_range).unsqueeze(-1)
-            
-            variances = torch.sum(BETAs * torch.square(idx_range - mus), dim=2)
-
-            index_margin_identity = idx_range * margin_identity
-            
-            spread = spread.to(self.device)
-            for t in range(max_comparisons):
-                idx_mask = index_margin_identity[t]
-                set_of_mus = mus[t]
-                set_of_vars = variances[t]
-                this_spread = spread[t]
-                idx_mask = idx_mask[margin_identity[t].bool()].unsqueeze(0)
-
-                each_mu_error = torch.square(indbool_idx_range[t] - set_of_mus).squeeze()
-                if self.alignment_variance > 0:
-                    tcc = each_mu_error + self.alignment_variance * torch.log(torch.sqrt(set_of_vars) + 1e-20)
-                else:
-                    tcc = each_mu_error
-
-                if contains_non_float_values(tcc):
-                    print("contains_non_float_values(tcc)")
-                    print(set_of_vars)
-                    print(set_of_mus)
-                    exit(1)
-                align_loss = torch.inner(tcc, this_spread)
-                if contains_non_float_values(1/align_loss):
-                    print("contains_non_float_values(1/align_loss)")
-                    print(align_loss)
-                    exit(1)
-
-                if self.gamma < 1:
-                    tcc_loss_term = BX[t] * align_loss + (1-BX[t]) * (1 / align_loss)
-                else:
-                    tcc_loss_term = align_loss
-
-                if None in [all_tcc_losses]:
-                    all_tcc_losses = tcc_loss_term
-                else: 
-                    all_tcc_losses += tcc_loss_term
-
-    return all_tcc_losses
-
+                secondary = secondary.to(self.device)
+                cdist = torch.cdist(primary, secondary, p=2)[ind_bool]
+                ALPHA_exp = torch.exp(-cdist / self.softmax_temp) + tiny_number
+                ALPHA = (ALPHA_exp.T / (ALPHA_exp.sum(dim=1))).T
+                
+                gmm = torch.zeros((ALPHA.shape[0], self.n_components, M)).to(self.device)
+                spread = torch.zeros((ALPHA.shape[0], self.n_components)).to(self.device)
+                for u in range(ALPHA.shape[0]):
+                    start = time.time()
+                    g, s, _ = get_gmm_lfbgf(
+                        ALPHA[u], self.n_components, max_iters=self.max_gmm_iters
+                    )
+                    g = g.to(self.device)
+                    s = s.to(self.device)
+    
+                    gmm[u] = g
+                    spread[u] = s
+                    
+                SNNs = (gmm @ secondary)
+                prim_expanded = primary.unsqueeze(0)
+                snn_cdist = torch.cdist(SNNs, prim_expanded, p=2)
+    
+                BETAs = (margin_identity * torch.exp(-snn_cdist / self.softmax_temp).permute(1,0,2)).permute(1, 0, 2) + tiny_number
+                BETAs = (BETAs.permute(2, 0, 1) / (BETAs.sum(dim=2) + 1e-6)).permute(1, 2, 0)
+    
+                mus = (BETAs @ idx_range).unsqueeze(-1)
+                
+                variances = torch.sum(BETAs * torch.square(idx_range - mus), dim=2)
+    
+                index_margin_identity = idx_range * margin_identity
+                
+                spread = spread.to(self.device)
+                for t in range(max_comparisons):
+                    idx_mask = index_margin_identity[t]
+                    set_of_mus = mus[t]
+                    set_of_vars = variances[t]
+                    this_spread = spread[t]
+                    idx_mask = idx_mask[margin_identity[t].bool()].unsqueeze(0)
+    
+                    each_mu_error = torch.square(indbool_idx_range[t] - set_of_mus).squeeze()
+                    if self.alignment_variance > 0:
+                        tcc = each_mu_error + self.alignment_variance * torch.log(torch.sqrt(set_of_vars) + 1e-20)
+                    else:
+                        tcc = each_mu_error
+    
+                    if contains_non_float_values(tcc):
+                        print("contains_non_float_values(tcc)")
+                        print(set_of_vars)
+                        print(set_of_mus)
+                        exit(1)
+                    align_loss = torch.inner(tcc, this_spread)
+                    if contains_non_float_values(1/align_loss):
+                        print("contains_non_float_values(1/align_loss)")
+                        print(align_loss)
+                        exit(1)
+    
+                    if self.gamma < 1:
+                        tcc_loss_term = BX[t] * align_loss + (1-BX[t]) * (1 / align_loss)
+                    else:
+                        tcc_loss_term = align_loss
+    
+                    if None in [all_tcc_losses]:
+                        all_tcc_losses = tcc_loss_term
+                    else: 
+                        all_tcc_losses += tcc_loss_term
+    
+        return all_tcc_losses
+    
 
 #########################################
 # below function is only for GTCC
