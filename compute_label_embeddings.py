@@ -4,8 +4,7 @@ import torch
 
 sys.path.insert(0, '../LanguageBind')
 
-from specvqgan.data.gh2 import GreatestHit
-from specvqgan.models.contrastive_pretraining_clip import LB_LabelEncoder
+from foley2025.contrastive.encoder import LB_LabelEncoder
 
 
 def create_label_embeddings(gh_meta_filepath: str = 'data/info_r2plus1d_dim1024_15fps.json',
