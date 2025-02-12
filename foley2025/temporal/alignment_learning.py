@@ -60,6 +60,9 @@ class TemporalAlignmentLearning(pl.LightningModule):
 
         loss = self.alignment_loss(aligned_audio_emb, aligned_video_emb)
         self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=1)
+
+        frobenius_norm = torch.linalg.matrix_norm(aligned_audio_emb) + torch.linalg.matrix_norm(aligned_video_emb)
+        self.log(f'{log_prefix}/frobenius_norm', loss, prog_bar=True, on_step=True, batch_size=1)
         return loss
 
     def training_step(self, batch, *args, **kwargs):
