@@ -551,11 +551,9 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         remaining = original_sequence_length - shift
         new_sequence_length = min(remaining, self.max_sequence_length)
 
-        # assert new_sequence_length >= self.min_sequence_length
         if new_sequence_length < self.min_sequence_length:
-            print(f'Warning: Random sequence of length {new_sequence_length} is too short.')
+            #print(f'Warning: Random sequence of length {new_sequence_length} is too short.')
             raise SequenceTooShortError()
-        # TODO skip clips that are too short?
 
         start_a, end_a = 0, new_sequence_length
         start_b, end_b = shift, new_sequence_length + shift
@@ -578,7 +576,7 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         try:
             (video_start, video_end), (audio_start, audio_end) = self.random_shifted_sequence(num_segments)
         except SequenceTooShortError:
-            print(f'Path: {path}')
+            #print(f'Path: {path}')
             return None, None
 
         sliced_video_embeddings = video_embeddings[video_start:video_end].to(device=self.device)
