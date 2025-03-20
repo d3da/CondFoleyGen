@@ -8,7 +8,6 @@ class TemporalAlignmentLearning(pl.LightningModule):
     def __init__(self,
                  encoder_config,
                  audio_align_model_config,
-                 video_align_model_config,
                  alignment_loss_config,
                  optim_learn_rate,
                  optim_weight_decay,
@@ -18,7 +17,6 @@ class TemporalAlignmentLearning(pl.LightningModule):
         self.encoder_model = instantiate_from_config(encoder_config)
 
         self.audio_align_model = instantiate_from_config(audio_align_model_config)
-        self.video_align_model = instantiate_from_config(video_align_model_config)
         self.alignment_loss = instantiate_from_config(alignment_loss_config)
 
         self.optim_learn_rate = optim_learn_rate
@@ -31,8 +29,7 @@ class TemporalAlignmentLearning(pl.LightningModule):
 
     def configure_optimizers(self):
         m = self.trainer.model
-        params = (p for p in itertools.chain(m.audio_align_model.parameters(),
-                                             m.video_align_model.parameters())
+        params = (p for p in m.audio_align_model.parameters()
                   if p.requires_grad)
         optimizer = torch.optim.Adam(params,
                                      lr=self.optim_learn_rate,
@@ -54,15 +51,13 @@ class TemporalAlignmentLearning(pl.LightningModule):
         audio_embeddings = torch.stack(audio_embeddings)
         video_embeddings = torch.stack(video_embeddings)
 
-        # audio_emb, video_emb = audio_emb.unsqueeze(0), video_emb.unsqueeze(0)
         aligned_audio_emb = self.audio_align_model(audio_embeddings)
-        aligned_video_emb = self.video_align_model(video_embeddings)
 
-        loss = self.alignment_loss(aligned_audio_emb, aligned_video_emb)
+        loss = self.alignment_loss(aligned_audio_emb, video_embeddings)
         self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=1)
 
-        frobenius_norm = torch.linalg.matrix_norm(aligned_audio_emb) + torch.linalg.matrix_norm(aligned_video_emb)
-        self.log(f'{log_prefix}/frobenius_norm', loss, prog_bar=True, on_step=True, batch_size=1)
+        frobenius_norm = torch.linalg.matrix_norm(aligned_audio_emb)
+        self.log(f'{log_prefix}/frobenius_norm', frobenius_norm.mean(), prog_bar=True, on_step=True, batch_size=1)
         return loss
 
     def training_step(self, batch, *args, **kwargs):
