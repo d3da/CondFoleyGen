@@ -94,3 +94,8 @@ data:
     shuffle_every_epoch: True
     splits_path: data
     data_path: '/local/s2014203/vis-data'
+
+wandb:
+  name: "Temporal_Retrainedv1"
+  notes: "Temporal alignment network, now changed to have only an audio network."
+
