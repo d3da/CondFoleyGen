@@ -38,18 +38,21 @@ class TemporalAlignmentLearning(pl.LightningModule):
 
     def shared_step(self, batch, log_prefix):
         audio_embeddings, video_embeddings = [], []
+        _shifted_video = []
         for clip_dict in batch:
-            audio_emb, video_emb = self.encoder_model(clip_dict)
-            if audio_emb is None or video_emb is None:
+            embeddings_dict = self.encoder_model(clip_dict)
+            if embeddings_dict is None:
                 continue
-            audio_embeddings.append(audio_emb)
-            video_embeddings.append(video_emb)
+            audio_embeddings.append(embeddings_dict['shifted_audio'])
+            video_embeddings.append(embeddings_dict['unshifted_video'])
+            _shifted_video.append(embeddings_dict['shifted_video'])
 
         if len(audio_embeddings) == 0 or len(video_embeddings) == 0:
             return None
 
         audio_embeddings = torch.stack(audio_embeddings)
         video_embeddings = torch.stack(video_embeddings)
+        _shifted_video = torch.stack(_shifted_video)
 
         aligned_audio_emb = self.audio_align_model(audio_embeddings)
 
@@ -57,7 +60,14 @@ class TemporalAlignmentLearning(pl.LightningModule):
         self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=1)
 
         frobenius_norm = torch.linalg.matrix_norm(aligned_audio_emb)
-        self.log(f'{log_prefix}/frobenius_norm', frobenius_norm.mean(), prog_bar=True, on_step=True, batch_size=1)
+        self.log(f'{log_prefix}/frobenius_norm', frobenius_norm.mean(), prog_bar=False, on_step=True, batch_size=1)
+
+        a_re = aligned_audio_emb.reshape((-1, aligned_audio_emb.shape[-1]))
+        v_re = _shifted_video.reshape((-1, aligned_audio_emb.shape[-1]))
+        cos_sim_loss = torch.nn.functional.cosine_embedding_loss(a_re, v_re, torch.ones(a_re.shape[0]).to(device=self.device))
+        self.log(f'{log_prefix}/cosine_loss', cos_sim_loss, prog_bar=True, on_step=True, batch_size=1)
+        mse_loss = torch.nn.functional.mse_loss(aligned_audio_emb, _shifted_video)
+        self.log(f'{log_prefix}/mse_loss', mse_loss, prog_bar=False, on_step=True, batch_size=1)
         return loss
 
     def training_step(self, batch, *args, **kwargs):

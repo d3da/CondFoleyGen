@@ -574,13 +574,24 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         assert audio_embeddings.shape[0] == num_segments
 
         try:
-            (video_start, video_end), (audio_start, audio_end) = self.random_shifted_sequence(num_segments)
+            (orig_start, orig_end), (shifted_start, shifted_end) = self.random_shifted_sequence(num_segments)
         except SequenceTooShortError:
-            #print(f'Path: {path}')
-            return None, None
+            return None
 
-        sliced_video_embeddings = video_embeddings[video_start:video_end].to(device=self.device)
-        sliced_audio_embeddings = audio_embeddings[audio_start:audio_end].to(device=self.device)
+        orig_video_embeddings = video_embeddings[orig_start:orig_end].to(device=self.device)
+        orig_audio_embeddings = audio_embeddings[orig_start:orig_end].to(device=self.device)
+        shifted_video_embeddings = video_embeddings[shifted_start:shifted_end].to(device=self.device)
+        shifted_audio_embeddings = audio_embeddings[shifted_start:shifted_end].to(device=self.device)
+
+        sliced_video_embeddings = video_embeddings[orig_start:orig_end].to(device=self.device)
+        sliced_audio_embeddings = audio_embeddings[shifted_start:shifted_end].to(device=self.device)
+
+        return {
+            'unshifted_video': orig_video_embeddings,
+            'unshifted_audio': orig_audio_embeddings,
+            'shifted_video': shifted_video_embeddings,
+            'shifted_audio': shifted_audio_embeddings
+        }
 
         return sliced_video_embeddings, sliced_audio_embeddings
 
@@ -592,7 +603,15 @@ class DummyTensors(pl.LightningModule):
     def forward(self, inputs):
         # inputs: B x C x T x W x H
         batch_size = inputs.shape[0]
-        return torch.randn(batch_size, 1024, device=inputs.device)
+        return torch.randn(batch_size, 768, device=inputs.device)
+
+class ZeroTensors(pl.LightningModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+    def forward(self, inputs):
+        batch_size = inputs.shape[0]
+        return torch.zeros(batch_size, 768, device=inputs.device)
 
 
 class GreatestHitEmbeddingSequenceDataModule(pl.LightningDataModule):

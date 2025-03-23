@@ -26,8 +26,7 @@ def main():
                                                        mode='min',
                                                        filename='{epoch}-{step}-{hp_metric}')
     profiler = pl.profilers.AdvancedProfiler(dirpath='.', filename='temporal_profiler_report')
-    logger = pl.loggers.WandbLogger(#name='CondFoleyGen',
-                                    offline=True,
+    logger = pl.loggers.WandbLogger(offline=True,
                                     save_dir='wandb_logs',
                                     project='CondFoleyGen',
                                     log_model=False,
