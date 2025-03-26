@@ -5,86 +5,69 @@ model:
       target: foley2025.data.greatest_hits.GreatestHitEmbeddingSequence
       params:
         video_encoder_config:
-          #target: specvqgan.data.gh2.DummyTensors
+          #target: foley2025.data.greatest_hits.DummyTensors
           #params: {}
           target: 'foley2025.contrastive.encoder.ContrastiveSingleModality'
-          #checkpoint: 'lightning_logs/version_324028/checkpoints/epoch=25-step=2418-hp_metric=3.6248340606689453.ckpt'
           checkpoint: 'checkpoints/video_encoder_finetuned.ckpt'
+
         audio_encoder_config:
-          #target: specvqgan.data.gh2.DummyTensors
+          #target: foley2025.data.greatest_hits.DummyTensors
           #params: {}
           target: 'foley2025.contrastive.encoder.ContrastiveSingleModality'
-          #checkpoint: 'lightning_logs/version_323840/checkpoints/epoch=67-step=6324-hp_metric=3.6003406047821045.ckpt'
           checkpoint: 'checkpoints/audio_encoder_finetuned.ckpt'
+
         encoder_batch_size: 16
         segment_duration_frames: 8
         embedding_save_dir: '/local/s2014203/embedding_sequences_v1'
+        #embedding_save_dir: '/local/s2014203/embedding_sequences_zerotensors_L30'
         min_shift: 5
         max_shift: 15
         min_sequence_length: 30
         max_sequence_length: 30
 
-    audio_align_model_config:
-      target: foley2025.temporal.alignment_model.FullyConnectedAlignmentModel
+    audio_tcc_model_config:
+      target: foley2025.temporal.alignment_model.TransformerAlignmentModel
       params:
         input_size: 768
         output_size: 768
-        hidden_size: 1024
         n_layers: 4
+        sequence_length: 30
+        num_heads: 8
         dropout: 0.2
-#      target: specvqgan.models.temporal_alignment_model.TransformerAlignmentModel
-#      params:
-#        input_size: 768
-#        output_size: 768
-#        n_layers: 8
-#        sequence_length: 30
-#        num_heads: 8
-#        dropout: 0.2
-#      target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
-#      params:
-#        input_size: 768
-#        output_size: 768
-#        n_layers: 4
-#        dropout: 0.2
-    video_align_model_config:
-      target: foley2025.temporal.alignment_model.FullyConnectedAlignmentModel
-      params:
-        input_size: 768
-        output_size: 768
-        hidden_size: 1024
-        n_layers: 4
-        dropout: 0.2
-#      target: foley2025.temporal.alignment_model.TransformerAlignmentModel
-#      params:
-#        input_size: 768
-#        output_size: 768
-#        n_layers: 8
-#        sequence_length: 30
-#        num_heads: 8
-#        dropout: 0.2
-#      target: specvqgan.models.temporal_alignment_model.LSTMAlignmentModel
-#      params:
-#        input_size: 768
-#        output_size: 768
-#        n_layers: 4
-#        dropout: 0.2
+
     alignment_loss_config:
-#      target: specvqgan.models.temporal.GTCCLoss
-#      params:
-#        n_components: 10
-#        lbfgs_max_iters: 500
-#        lbfgs_lr: 0.1
-#        tcc_lambda: 0.05
-#        window_ratio: 0.25
-#        softmax_temperature: 0.1
-#        gmm_min_variance: 0.5
-#        divide_by_variance: False
-      target: foley2025.temporal.loss.TCCLoss
+      #target: foley2025.temporal.loss.GTCCLoss
+      #params:
+      #  n_components: 10
+      #  lbfgs_max_iters: 50
+      #  lbfgs_lr: 0.5
+      #  tcc_lambda: 0.05
+      #  window_ratio: 0.25
+      #  softmax_temperature: 0.1
+      #  gmm_min_variance: 0.5
+      #  divide_by_variance: False
+      #target: foley2025.temporal.legacy_loss.GTCCLoss
+      #params:
+      #  n_components: 10
+      #  lbfgs_max_iters: 50
+      #  window_ratio: 0.25
+      #  softmax_temperature: 0.1
+      #  max_gmm_iters: 1
+      #  tcc_lambda: 0.05
+      target: foley2025.temporal.legacy_loss.TCCLoss
       params:
         tcc_lambda: 0.05
         softmax_temperature: 0.1
+
+    alignment_procedure_config:
+      target: foley2025.temporal.alignment_procedure.AlignFunction
+      params:
+        softmax_temperature: 0.1
+        conf_similarity_str: 'cosine'
+
     optim_learn_rate: 1e-6
-    optim_weight_decay: 1e-9
+    #optim_weight_decay: 1e-9
+    optim_weight_decay: 0.0
 
 data:
   target: foley2025.data.greatest_hits.GreatestHitFullClipsDataModule

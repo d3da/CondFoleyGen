@@ -7,8 +7,9 @@ from utils import instantiate_from_config
 class TemporalAlignmentLearning(pl.LightningModule):
     def __init__(self,
                  encoder_config,
-                 audio_align_model_config,
+                 audio_tcc_model_config,
                  alignment_loss_config,
+                 alignment_procedure_config,
                  optim_learn_rate,
                  optim_weight_decay,
                  ):
@@ -16,8 +17,9 @@ class TemporalAlignmentLearning(pl.LightningModule):
 
         self.encoder_model = instantiate_from_config(encoder_config)
 
-        self.audio_align_model = instantiate_from_config(audio_align_model_config)
+        self.audio_tcc_model = instantiate_from_config(audio_tcc_model_config)
         self.alignment_loss = instantiate_from_config(alignment_loss_config)
+        self.alignment_procedure = instantiate_from_config(alignment_procedure_config)
 
         self.optim_learn_rate = optim_learn_rate
         self.optim_weight_decay = optim_weight_decay
@@ -29,7 +31,7 @@ class TemporalAlignmentLearning(pl.LightningModule):
 
     def configure_optimizers(self):
         m = self.trainer.model
-        params = (p for p in m.audio_align_model.parameters()
+        params = (p for p in m.audio_tcc_model.parameters()
                   if p.requires_grad)
         optimizer = torch.optim.Adam(params,
                                      lr=self.optim_learn_rate,
@@ -54,19 +56,19 @@ class TemporalAlignmentLearning(pl.LightningModule):
         video_embeddings = torch.stack(video_embeddings)
         _shifted_video = torch.stack(_shifted_video)
 
-        aligned_audio_emb = self.audio_align_model(audio_embeddings)
+        tcc_audio_emb = self.audio_tcc_model(audio_embeddings)
 
-        loss = self.alignment_loss(aligned_audio_emb, video_embeddings)
+        loss = self.alignment_loss(tcc_audio_emb, video_embeddings)
         self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=1)
 
-        frobenius_norm = torch.linalg.matrix_norm(aligned_audio_emb)
+        frobenius_norm = torch.linalg.matrix_norm(tcc_audio_emb)
         self.log(f'{log_prefix}/frobenius_norm', frobenius_norm.mean(), prog_bar=False, on_step=True, batch_size=1)
 
-        a_re = aligned_audio_emb.reshape((-1, aligned_audio_emb.shape[-1]))
-        v_re = _shifted_video.reshape((-1, aligned_audio_emb.shape[-1]))
+        a_re = tcc_audio_emb.reshape((-1, tcc_audio_emb.shape[-1]))
+        v_re = _shifted_video.reshape((-1, tcc_audio_emb.shape[-1]))
         cos_sim_loss = torch.nn.functional.cosine_embedding_loss(a_re, v_re, torch.ones(a_re.shape[0]).to(device=self.device))
         self.log(f'{log_prefix}/cosine_loss', cos_sim_loss, prog_bar=True, on_step=True, batch_size=1)
-        mse_loss = torch.nn.functional.mse_loss(aligned_audio_emb, _shifted_video)
+        mse_loss = torch.nn.functional.mse_loss(tcc_audio_emb, _shifted_video)
         self.log(f'{log_prefix}/mse_loss', mse_loss, prog_bar=False, on_step=True, batch_size=1)
         return loss
 
