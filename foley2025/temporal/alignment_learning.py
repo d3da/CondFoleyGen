@@ -1,5 +1,6 @@
 import pytorch_lightning as pl
 import torch
+import torch.nn.functional as F
 import itertools
 
 from utils import instantiate_from_config
@@ -41,6 +42,7 @@ class TemporalAlignmentLearning(pl.LightningModule):
     def shared_step(self, batch, log_prefix):
         audio_embeddings, video_embeddings = [], []
         _shifted_video = []
+        _unshifted_audio = []
         for clip_dict in batch:
             embeddings_dict = self.encoder_model(clip_dict)
             if embeddings_dict is None:
@@ -48,6 +50,7 @@ class TemporalAlignmentLearning(pl.LightningModule):
             audio_embeddings.append(embeddings_dict['shifted_audio'])
             video_embeddings.append(embeddings_dict['unshifted_video'])
             _shifted_video.append(embeddings_dict['shifted_video'])
+            _unshifted_audio.append(embeddings_dict['unshifted_audio'])
 
         if len(audio_embeddings) == 0 or len(video_embeddings) == 0:
             return None
@@ -55,6 +58,7 @@ class TemporalAlignmentLearning(pl.LightningModule):
         audio_embeddings = torch.stack(audio_embeddings)
         video_embeddings = torch.stack(video_embeddings)
         _shifted_video = torch.stack(_shifted_video)
+        _unshifted_audio = torch.stack(_unshifted_audio)
 
         tcc_audio_emb = self.audio_tcc_model(audio_embeddings)
 
@@ -64,12 +68,21 @@ class TemporalAlignmentLearning(pl.LightningModule):
         frobenius_norm = torch.linalg.matrix_norm(tcc_audio_emb)
         self.log(f'{log_prefix}/frobenius_norm', frobenius_norm.mean(), prog_bar=False, on_step=True, batch_size=1)
 
+        # Compute explicit alignment of tcc embeddings to video
+        aligned_audio_emb = self.alignment_procedure(tcc_audio_emb, video_embeddings)
+
+        # Metrics calculated between aligned audio embedding and unshifted audio embeddings
+        align_mse_loss = F.mse_loss(aligned_audio_emb, _unshifted_audio)
+        self.log(f'{log_prefix}/aligned_mse_loss', align_mse_loss, prog_bar=True, on_step=True, batch_size=1)
+
+        # Metrics calculated between (shifted) TCC audio embeddings and shifted video embeddings
         a_re = tcc_audio_emb.reshape((-1, tcc_audio_emb.shape[-1]))
         v_re = _shifted_video.reshape((-1, tcc_audio_emb.shape[-1]))
-        cos_sim_loss = torch.nn.functional.cosine_embedding_loss(a_re, v_re, torch.ones(a_re.shape[0]).to(device=self.device))
-        self.log(f'{log_prefix}/cosine_loss', cos_sim_loss, prog_bar=True, on_step=True, batch_size=1)
-        mse_loss = torch.nn.functional.mse_loss(tcc_audio_emb, _shifted_video)
-        self.log(f'{log_prefix}/mse_loss', mse_loss, prog_bar=False, on_step=True, batch_size=1)
+        cos_sim_loss = F.cosine_embedding_loss(a_re, v_re, torch.ones(a_re.shape[0]).to(device=self.device))
+        self.log(f'{log_prefix}/cosine_loss', cos_sim_loss, prog_bar=False, on_step=True, batch_size=1)
+        mse_loss = F.mse_loss(tcc_audio_emb, _shifted_video)
+        self.log(f'{log_prefix}/mse_loss', mse_loss, prog_bar=True, on_step=True, batch_size=1)
+
         return loss
 
     def training_step(self, batch, *args, **kwargs):
