@@ -4,6 +4,24 @@ import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
 
+from utils import instantiate_from_config
+
+
+class CombinedLoss(pl.LightningModule):
+    def __init__(self,
+                 losses):
+        super().__init__()
+
+        self.losses = []
+        self.loss_weights = []
+
+        for loss in losses:
+            self.losses.append(instantiate_from_config(loss.config))
+            self.loss_weights.append(loss.weight)
+
+    def forward(self, *args):
+        return sum(loss(*args) * weight for loss, weight in zip(self.losses, self.loss_weights))
+
 
 class TCCLoss(pl.LightningModule):
 
