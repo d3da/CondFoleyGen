@@ -35,20 +35,17 @@ model:
         num_heads: 8
         dropout: 0.2
 
-    alignment_loss_config:
-      target: foley2025.temporal.loss.CombinedLoss
+    tcc_loss_config:
+      target: foley2025.temporal.loss.TCCLoss
       params:
-        losses:
-          - weight: 10
-            config:
-              target: torch.nn.MSELoss
-              params: {}
-          - weight: 0.01
-            config:
-              target: foley2025.temporal.loss.TCCLoss
-              params:
-                tcc_lambda: 0.05
-                softmax_temperature: 0.1
+        tcc_lambda: 0.05
+        softmax_temperature: 0.1
+    tcc_loss_weight: 1
+
+    alignment_loss_config:
+      target: torch.nn.MSELoss
+      params: {}
+    alignment_loss_weight: 10
 
       #target: foley2025.temporal.loss.GTCCLoss
       #params:
