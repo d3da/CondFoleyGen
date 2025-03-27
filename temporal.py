@@ -26,19 +26,19 @@ def main():
                                                        mode='min',
                                                        filename='{epoch}-{step}-{hp_metric}')
     profiler = pl.profilers.AdvancedProfiler(dirpath='.', filename='temporal_profiler_report')
-#    logger = pl.loggers.WandbLogger(offline=True,
-#                                    save_dir='wandb_logs',
-#                                    project='CondFoleyGen',
-#                                    log_model=False,
-#                                    config=OmegaConf.to_object(conf),
-#                                    **wandb_conf)
-#    logger.watch(model)
+    logger = pl.loggers.WandbLogger(offline=True,
+                                    save_dir='wandb_logs',
+                                    project='CondFoleyGen',
+                                    log_model=False,
+                                    config=OmegaConf.to_object(conf),
+                                    **wandb_conf)
+    logger.watch(model)
 
     trainer = pl.Trainer(accelerator='gpu',
                          devices=1,
                          # fast_dev_run=10,
                          profiler=profiler,
-                         #logger=logger,
+                         logger=logger,
                          log_every_n_steps=1,
                          callbacks=[checkpoint_callback])
 
