@@ -1,5 +1,6 @@
 import sys
 import os
+import importlib
 
 import pytorch_lightning as pl
 
@@ -16,8 +17,8 @@ import torch
 
 
 def main():
-    torch.cuda.empty_cache()
-    torch.set_float32_matmul_precision("high")
+    # torch.cuda.empty_cache()
+    # torch.set_float32_matmul_precision("high")
     
     conf = OmegaConf.load('configs/contrastive_videoonly.yaml')
     model = instantiate_from_config(conf.model)
@@ -43,3 +44,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

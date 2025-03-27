@@ -1,8 +1,8 @@
 # For CondFoleyGen
 soundfile
-torch==1.13.1
-torchvision==0.14.1
-torchaudio==0.13.1
+#torch==1.13.1
+#torchvision==0.14.1
+#torchaudio==0.13.1
 # torchtext~=0.6.0
 # torchmetrics~=0.2.0
 librosa

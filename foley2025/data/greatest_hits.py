@@ -517,15 +517,34 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         return torch.cat(all_video_embeddings), torch.cat(all_audio_embeddings)
 
 
+    def _plot_mel_spec(self, mel_specs, audio_path, idx):
+        import matplotlib.pyplot as plt
+        import librosa
+        fig, axs = plt.subplots(mel_specs.shape[0], 1)
+
+        for i, ax in enumerate(axs.flat):
+            mel_spec = mel_specs[i]
+            ax.set_title(f'Mel-spec {i}')
+            ax.imshow(librosa.power_to_db(mel_spec), origin="lower", aspect="auto", interpolation="nearest")
+
+        plt.savefig(f'mel_specs/{idx}.png')
+        plt.close(fig)
+
+
     def audio_embeddings(self, audio_path, batch_start_end_times):
         waveform, sample_rate = lb.audio.processing_audio.torchaudio_loader(audio_path)
 
         preprocessed_frames = []
-        for start_time, end_time in batch_start_end_times:
+        for i, (start_time, end_time) in enumerate(batch_start_end_times):
             start_frame = int(start_time * sample_rate)
             end_frame = int(end_time * sample_rate)
             waveform_sliced = waveform[:, start_frame:end_frame]
-            preprocessed_frames.append(self.audio_preprocessor.transform((waveform_sliced, sample_rate)))
+            mel_specs = self.audio_preprocessor.transform((waveform_sliced, sample_rate))
+            #
+            # import pdb; pdb.set_trace()
+            #
+            # self._plot_mel_spec(mel_specs, audio_path, i)
+            preprocessed_frames.append(mel_specs)
 
         with torch.inference_mode():
             raw_audio = torch.stack(preprocessed_frames, dim=0).to(device=self.device)
