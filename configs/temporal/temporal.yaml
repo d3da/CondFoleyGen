@@ -64,7 +64,7 @@ model:
 #          params:
 #            tcc_lambda: 0.05
 #            softmax_temperature: 0.1
-    tcc_loss_weight: 1
+    tcc_loss_weight: 0.1
 
     alignment_loss_config:
       target: torch.nn.MSELoss

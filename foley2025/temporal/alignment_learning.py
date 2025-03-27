@@ -73,7 +73,7 @@ class TemporalAlignmentLearning(pl.LightningModule):
         tcc_audio_emb = self.audio_tcc_model(audio_embeddings)
 
         # Calculate TCC loss (between tcc audio and video embeddings)
-        tcc_loss = self.tcc_loss_weight * self.tcc_loss(tcc_audio_emb, video_embeddings)
+        tcc_loss = self.tcc_loss(tcc_audio_emb, video_embeddings)
         self.log(f'{log_prefix}/tcc_loss', tcc_loss, prog_bar=True, on_step=True, batch_size=batch_size)
 
 
@@ -90,10 +90,10 @@ class TemporalAlignmentLearning(pl.LightningModule):
         # self.log(f'{log_prefix}/aligned_mse_loss', align_mse_loss, prog_bar=True, on_step=True, batch_size=batch_size)
 
         # Calculate alignment loss (between aligned audio and unshifted audio)
-        alignment_loss = self.alignment_loss_weight * self.alignment_loss(aligned_audio_emb, _unshifted_audio)
+        alignment_loss = self.alignment_loss(aligned_audio_emb, _unshifted_audio)
         self.log(f'{log_prefix}/aligned_loss', alignment_loss, prog_bar=True, on_step=True, batch_size=batch_size)
 
-        combined_loss = tcc_loss + alignment_loss
+        combined_loss = self.tcc_loss_weight * tcc_loss + self.alignment_loss_weight * alignment_loss
         self.log(f'{log_prefix}/combined_loss', combined_loss, prog_bar=True, on_step=True, batch_size=batch_size)
         return combined_loss
 
