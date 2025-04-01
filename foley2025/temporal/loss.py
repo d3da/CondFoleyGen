@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 
 from utils import instantiate_from_config
+from foley2025.utils.similarity_function import SimilarityFunction
 
 
 class CombinedLoss(pl.LightningModule):
@@ -25,10 +26,12 @@ class CombinedLoss(pl.LightningModule):
 
 class TCCLoss(pl.LightningModule):
 
-    def __init__(self, tcc_lambda, softmax_temperature):
+    def __init__(self, tcc_lambda, softmax_temperature, similarity_fn):
         super().__init__()
         self.tcc_lambda = tcc_lambda
         self.softmax_temperature = softmax_temperature
+
+        self.similarity_fn = SimilarityFunction.from_string(similarity_fn)
 
         self.save_hyperparameters()
 
@@ -44,10 +47,13 @@ class TCCLoss(pl.LightningModule):
     def tcc_similarities(self,
                          u,  # L_1 x D
                          v):  # L_2 x D
-        out_sim = F.cosine_similarity(u.unsqueeze(1), v.unsqueeze(0), dim=2)  # L_i x L_2
+        # out_sim = F.cosine_similarity(u.unsqueeze(1), v.unsqueeze(0), dim=2)  # L_i x L_2
+        out_sim = self.similarity_fn(u, v)  # L_i x L_2
         alphas = F.softmax(out_sim / self.softmax_temperature, dim=1)  # L_i x L_2
         snn = alphas.matmul(v)  # L_i x D
-        in_sim = F.cosine_similarity(snn.unsqueeze(1), u.unsqueeze(0), dim=2)  # L_2
+        # in_sim = F.cosine_similarity(snn.unsqueeze(1), u.unsqueeze(0), dim=2)  # L_2
+        in_sim = self.similarity_fn(snn, u)  # L_2
+
         betas = F.softmax(in_sim / self.softmax_temperature, dim=1)  # L_1 x L_1
         return betas
 
@@ -65,6 +71,7 @@ class TCCLoss(pl.LightningModule):
 
 class GTCCLoss(pl.LightningModule):
     def __init__(self,
+                 similarity_fn: str,
                  n_components: int,
                  lbfgs_max_iters: int,
                  lbfgs_lr: float,
@@ -74,6 +81,8 @@ class GTCCLoss(pl.LightningModule):
                  gmm_min_variance: float = 0.1,
                  divide_by_variance: bool = False):
         super().__init__()
+
+        self.similarity_fn = SimilarityFunction.from_string(similarity_fn)
 
         self.n_components = n_components
         self.lbfgs_max_iters = lbfgs_max_iters
@@ -135,17 +144,21 @@ class GTCCLoss(pl.LightningModule):
     def gtcc_loss(self,
                   u,  # L_1 x D
                   v): # L_2 x D
-        out_sim = F.cosine_similarity(u.unsqueeze(1), v.unsqueeze(0), dim=2)  # L_i x L_2
+        # out_sim = F.cosine_similarity(u.unsqueeze(1), v.unsqueeze(0), dim=2)  # L_i x L_2
         # out_sim = -torch.sqrt(2 - 2 * out_sim + 1e-6)
+        out_sim = self.similarity_fn(u, v)
 
         alphas = F.softmax(out_sim / self.softmax_temperature, dim=-1)  # L_i x L_2
         component_means, component_variances, component_weights = self.fit_gmm(alphas)  # L_i x K
         snns = self.component_snns(v, component_means, component_variances)  # L_i x K x D
 
-        in_sim = F.cosine_similarity(snns.unsqueeze(1),  # L_i x 1 x K x D
-                                     u.unsqueeze(1).unsqueeze(0),  # 1 x L_1 x 1 x D
-                                     dim=-1)  # L_i x L_1 x K
+        # in_sim = F.cosine_similarity(snns.unsqueeze(1),  # L_i x 1 x K x D
+        #                              u.unsqueeze(1).unsqueeze(0),  # 1 x L_1 x 1 x D
+        #                              dim=-1)  # L_i x L_1 x K
         # in_sim = -torch.sqrt(2 - 2 * in_sim + 1e-6)
+        snn_k_first = snns.permute(1, 0, 2)  # K x L_i x D
+        u_k_first = u.unsqueeze(0).expand(snn_k_first.shape[0], -1, -1)  # K x L_1 x D
+        in_sim = self.similarity_fn(snn_k_first, u_k_first).permute(1, 2, 0)  # L_i x L_1 x K
 
         mask = self.stochastic_window_mask(in_sim.shape[0])  # L_i x L_1
         in_sim = in_sim.masked_fill(~mask.unsqueeze(-1), float('-inf'))

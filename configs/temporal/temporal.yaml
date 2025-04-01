@@ -40,6 +40,30 @@ model:
       params:
         tcc_lambda: 0.05
         softmax_temperature: 0.1
+        similarity_fn: 'negative-euclidean'
+#      target: foley2025.temporal.loss.GTCCLoss
+#      params:
+#        similarity_fn: 'negative-euclidean'
+#        n_components: 10
+#        lbfgs_max_iters: 50
+#        lbfgs_lr: 0.5
+#        tcc_lambda: 0.05
+#        window_ratio: 0.25
+#        softmax_temperature: 0.1
+#        gmm_min_variance: 0.5
+#        divide_by_variance: False
+#      target: foley2025.temporal.legacy_loss.GTCCLoss
+#      params:
+#        n_components: 10
+#        lbfgs_max_iters: 50
+#        window_ratio: 0.25
+#        softmax_temperature: 0.1
+#        max_gmm_iters: 1
+#        tcc_lambda: 0.05
+#          target: foley2025.temporal.legacy_loss.TCCLoss
+#          params:
+#            tcc_lambda: 0.05
+#            softmax_temperature: 0.1
     tcc_loss_weight: 1
 
     alignment_loss_config:
@@ -47,28 +71,6 @@ model:
       params: {}
     alignment_loss_weight: 10
 
-      #target: foley2025.temporal.loss.GTCCLoss
-      #params:
-      #  n_components: 10
-      #  lbfgs_max_iters: 50
-      #  lbfgs_lr: 0.5
-      #  tcc_lambda: 0.05
-      #  window_ratio: 0.25
-      #  softmax_temperature: 0.1
-      #  gmm_min_variance: 0.5
-      #  divide_by_variance: False
-      #target: foley2025.temporal.legacy_loss.GTCCLoss
-      #params:
-      #  n_components: 10
-      #  lbfgs_max_iters: 50
-      #  window_ratio: 0.25
-      #  softmax_temperature: 0.1
-      #  max_gmm_iters: 1
-      #  tcc_lambda: 0.05
-#      target: foley2025.temporal.legacy_loss.TCCLoss
-#      params:
-#        tcc_lambda: 0.05
-#        softmax_temperature: 0.1
 
     alignment_procedure_config:
       target: foley2025.temporal.alignment_procedure.AlignFunction

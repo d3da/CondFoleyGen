@@ -53,8 +53,8 @@ class NegativeEuclideanSimilarityFunction(SimilarityFunction):
     def forward(self, u, v):
         assert len(u.shape) == len(v.shape)
         assert u.shape[-1] == v.shape[-1]
-        if len(u.shape) == 3:
-            assert u.shape[0] == v.shape[0]
+        if len(u.shape) <= 3:
+            assert u.shape[:-2] == v.shape[:-2]
 
         return -1 * torch.cdist(u, v, p=2)
 
