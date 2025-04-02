@@ -509,12 +509,15 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
 
         all_video_embeddings = []
         all_audio_embeddings = []
+        all_start_end_times = []
         for video_embeddings_batch, batch_start_end_times in self.batched_embed_videos(video_path):
             audio_embeddings_batch = self.audio_embeddings(audio_path, batch_start_end_times)
 
             all_video_embeddings.append(video_embeddings_batch)
             all_audio_embeddings.append(audio_embeddings_batch)
-        return torch.cat(all_video_embeddings), torch.cat(all_audio_embeddings)
+            all_start_end_times += batch_start_end_times
+
+        return torch.cat(all_video_embeddings), torch.cat(all_audio_embeddings), all_start_end_times
 
 
     def _plot_mel_spec(self, mel_specs, audio_path, idx):
@@ -552,16 +555,16 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         return audio_embeddings
 
 
-    def load_or_preprocess_clip(self, clip_dict) -> tuple[torch.Tensor, torch.Tensor]:
+    def load_or_preprocess_clip(self, clip_dict) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         clip = clip_dict['clip']
         save_path = self.embedding_save_path(clip)
         if os.path.isfile(save_path):
-            video_embeddings, audio_embeddings = torch.load(save_path)
-            return video_embeddings, audio_embeddings
+            video_embeddings, audio_embeddings, start_end_times = torch.load(save_path)
+            return video_embeddings, audio_embeddings, start_end_times
 
-        video_embeddings, audio_embeddings = self.preprocess_clip(clip_dict)
-        torch.save((video_embeddings, audio_embeddings), save_path)
-        return video_embeddings, audio_embeddings
+        video_embeddings, audio_embeddings, start_end_times = self.preprocess_clip(clip_dict)
+        torch.save((video_embeddings, audio_embeddings, start_end_times), save_path)
+        return video_embeddings, audio_embeddings, start_end_times
 
 
     def random_shifted_sequence(self, original_sequence_length):
@@ -592,7 +595,7 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         return self.load_all_embeddings(batch)
 
     def load_all_embeddings(self, path):
-        video_embeddings, audio_embeddings = self.load_or_preprocess_clip(path)
+        video_embeddings, audio_embeddings, start_end_times = self.load_or_preprocess_clip(path)
 
         num_segments = video_embeddings.shape[0]
         assert audio_embeddings.shape[0] == num_segments
@@ -607,8 +610,6 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         shifted_video_embeddings = video_embeddings[shifted_start:shifted_end].to(device=self.device)
         shifted_audio_embeddings = audio_embeddings[shifted_start:shifted_end].to(device=self.device)
 
-        sliced_video_embeddings = video_embeddings[orig_start:orig_end].to(device=self.device)
-        sliced_audio_embeddings = audio_embeddings[shifted_start:shifted_end].to(device=self.device)
 
         return {
             'unshifted_video': orig_video_embeddings,
@@ -616,8 +617,6 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
             'shifted_video': shifted_video_embeddings,
             'shifted_audio': shifted_audio_embeddings
         }
-
-        return sliced_video_embeddings, sliced_audio_embeddings
 
 
 class DummyTensors(pl.LightningModule):
