@@ -459,22 +459,16 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
     def video_rgb_frames_generator(self, video_path) -> Iterator[tuple[torch.Tensor, float]]:
         print(f'Decoding {video_path}')
         segment_frames = []
-        # num_segments = 0
 
         with (av.open(video_path) as container):
-            new_segment = True
             segment_start_time = 0
             for i, frame in tqdm.tqdm(enumerate(container.decode(video=0)), total=container.streams[0].frames):
-
-                if new_segment:
-                    segment_start_time = frame.time
-                    new_segment = False
 
                 if i % self.segment_duration_frames == 0 and i != 0:
                     yield (self.video_preprocessor.transform(torch.stack(segment_frames, dim=1)),  # C x T x H x W
                            (segment_start_time, frame.time))  # (start_time, end_time) tuple
                     segment_frames = []
-                    new_segment = True
+                    segment_start_time = frame.time
 
                 frame_rgb = frame.to_rgb().to_ndarray()
                 frame_tensor = torch.from_numpy(frame_rgb).permute(2, 0, 1)  # Format as C x H x W for pytorch
