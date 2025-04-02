@@ -607,7 +607,8 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         start_a, end_a = 0, new_sequence_length
         start_b, end_b = shift, new_sequence_length + shift
 
-        absolute_shift = random.randint(0, original_sequence_length - new_sequence_length - shift + 1)
+        absolute_shift = random.randint(0, original_sequence_length - new_sequence_length - shift - 1)
+        # absolute_shift = 0
 
         start_a, end_a = start_a + absolute_shift, end_a + absolute_shift
         start_b, end_b = start_b + absolute_shift, end_b + absolute_shift
