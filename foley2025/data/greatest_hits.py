@@ -519,6 +519,19 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         return torch.cat(all_video_embeddings), torch.cat(all_audio_embeddings), all_start_end_times
 
 
+    def _plot_mel_spec_single(self, mel_spec, name, start_time, end_time):
+        import matplotlib.pyplot as plt
+        # import librosa
+
+        fig, axs = plt.subplots(1, 1)
+        axs.set_title('Mel-spectrogram')
+        # axs.imshow(librosa.power_to_db(mel_spec.T.cpu()), origin='lower', aspect='auto', interpolation='nearest')
+        axs.imshow(mel_spec.T.cpu(), origin='lower', aspect='auto', interpolation='nearest', extent=[start_time, end_time, 0, 112])
+        plt.savefig(f'/workspace/specs/{name}.png')
+        plt.close(fig)
+
+
+
     def _plot_mel_spec(self, mel_specs, audio_path, idx):
         import matplotlib.pyplot as plt
         import librosa
@@ -650,6 +663,7 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
                 .to(device=self.device)
             shifted_spectrogram = self.process_full_mel_spectrogram(audio_file, shifted_start_time, shifted_end_time) \
                 .to(device=self.device)
+            # self._plot_mel_spec_single(unshifted_spectrogram, path['clip'], orig_start_time, orig_end_time)
 
         return {
             'unshifted_video': orig_video_embeddings,
