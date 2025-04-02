@@ -13,6 +13,8 @@ import numpy as np
 import tqdm
 import random
 
+import torchaudio
+
 from utils import instantiate_from_config
 
 CONDFOLEYGEN_SR = 22050
@@ -383,7 +385,8 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
                  max_shift,
                  min_sequence_length,
                  max_sequence_length,
-                 encoder_batch_size):
+                 encoder_batch_size,
+                 return_full_mel_spec):
         super().__init__()
 
         self.video_encoder_config = video_encoder_config
@@ -400,6 +403,8 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         self.max_sequence_length = max_sequence_length
 
         self.encoder_batch_size = encoder_batch_size
+
+        self.return_full_mel_spec = return_full_mel_spec
 
         self._video_preprocessor = None
         self._audio_preprocessor = None
@@ -533,6 +538,34 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         plt.savefig(f'mel_specs/{idx}.png')
         plt.close(fig)
 
+    def process_full_mel_spectrogram(self, audio_path, start_time, end_time):
+        waveform, old_sample_rate = lb.audio.processing_audio.torchaudio_loader(audio_path)
+        target_sr = self.audio_preprocessor.transform.sample_rate
+        if old_sample_rate != target_sr:
+            waveform = torchaudio.functional.resample(waveform, orig_freq=old_sample_rate, new_freq=target_sr)
+        start_frame = int(start_time * target_sr)
+        end_frame = int(end_time * target_sr)
+        waveform_sliced = waveform[:, start_frame:end_frame]
+        return self.get_mel(waveform_sliced)
+
+
+    def get_mel(self, audio_data):
+        """From LanguageBind"""
+        # mel shape: (n_mels, T)
+        audio_data -= audio_data.mean()
+        mel = torchaudio.compliance.kaldi.fbank(
+            audio_data,
+            htk_compat=True,
+            sample_frequency=self.audio_preprocessor.transform.sample_rate,
+            use_energy=False,
+            window_type="hanning",
+            num_mel_bins=self.audio_preprocessor.transform.num_mel_bins,
+            dither=0.0,
+            frame_length=25,
+            frame_shift=10,
+        )
+        return mel  # (T, n_mels)
+
 
     def audio_embeddings(self, audio_path, batch_start_end_times):
         waveform, sample_rate = lb.audio.processing_audio.torchaudio_loader(audio_path)
@@ -610,12 +643,26 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         shifted_video_embeddings = video_embeddings[shifted_start:shifted_end].to(device=self.device)
         shifted_audio_embeddings = audio_embeddings[shifted_start:shifted_end].to(device=self.device)
 
+        unshifted_spectrogram = None
+        shifted_spectrogram = None
+        if self.return_full_mel_spec:
+            audio_file = path['audio_path']
+            orig_start_time, _ = start_end_times[orig_start]
+            _, orig_end_time = start_end_times[orig_end]
+            shifted_start_time, _ = start_end_times[shifted_start]
+            _, shifted_end_time = start_end_times[shifted_end]
+            unshifted_spectrogram = self.process_full_mel_spectrogram(audio_file, orig_start_time, orig_end_time) \
+                .to(device=self.device)
+            shifted_spectrogram = self.process_full_mel_spectrogram(audio_file, shifted_start_time, shifted_end_time) \
+                .to(device=self.device)
 
         return {
             'unshifted_video': orig_video_embeddings,
             'unshifted_audio': orig_audio_embeddings,
             'shifted_video': shifted_video_embeddings,
-            'shifted_audio': shifted_audio_embeddings
+            'shifted_audio': shifted_audio_embeddings,
+            'unshifted_spectrogram': unshifted_spectrogram,
+            'shifted_spectrogram': shifted_spectrogram,
         }
 
 

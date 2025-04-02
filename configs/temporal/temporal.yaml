@@ -24,6 +24,7 @@ model:
         max_shift: 15
         min_sequence_length: 30
         max_sequence_length: 30
+        return_full_mel_spec: False
 
     audio_tcc_model_config:
       target: foley2025.temporal.alignment_model.TransformerAlignmentModel
