@@ -1,0 +1,56 @@
+model:
+  target: foley2025.decoder.training.DecoderTraining
+  params:
+    encoder_config:
+      target: foley2025.data.greatest_hits.GreatestHitEmbeddingSequence
+      params:
+        video_encoder_config:
+          target: foley2025.data.greatest_hits.DummyTensors
+          params: {}
+
+        audio_encoder_config:
+          target: 'foley2025.contrastive.encoder.ContrastiveSingleModality'
+          checkpoint: 'checkpoints/audio_encoder_finetuned.ckpt'
+
+        encoder_batch_size: 4
+        segment_duration_frames: 8
+        embedding_save_dir: '/workspace/embeddings_2'
+        min_shift: 5
+        max_shift: 15
+        min_sequence_length: 30
+        max_sequence_length: 30
+        return_full_mel_spec: True
+
+    audio_tcc_model_config:
+      target: foley2025.temporal.alignment_learning.TemporalAlignmentLearning
+      checkpoint: 'checkpoints/tcc_layer_cosine.ckpt'
+      kwargs:
+        strict: False
+
+    alignment_procedure_config:
+      target: foley2025.temporal.alignment_procedure.AlignFunction
+      params:
+        softmax_temperature: 0.1
+        conf_similarity_str: 'cosine'
+
+    decoder_config:
+      target: foley2025.decoder.model.Decoder
+      params: {}
+
+    optim_learn_rate: 1e-6
+    #optim_weight_decay: 1e-9
+    optim_weight_decay: 0.0
+
+data:
+  target: foley2025.data.greatest_hits.GreatestHitFullClipsDataModule
+  params:
+    batch_size: 2
+    num_workers: 0
+    shuffle_every_epoch: True
+    splits_path: data
+    data_path: '/workspace/vis-data'
+
+wandb:
+  name: "Decoder_v0"
+  notes: "Custom decoder with combined residual 1d and 2d convolutional layers."
+

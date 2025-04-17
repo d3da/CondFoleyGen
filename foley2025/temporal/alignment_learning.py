@@ -35,7 +35,7 @@ class TemporalAlignmentLearning(pl.LightningModule):
         self.save_hyperparameters()
 
     def forward(self, x):
-        return self.model(x)
+        return self.audio_tcc_model(x)
 
     def configure_optimizers(self):
         m = self.trainer.model

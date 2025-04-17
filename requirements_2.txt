@@ -8,7 +8,7 @@ soundfile
 librosa
 # albumentations==0.5.2
 # torch_pitch_shift
-# matplotlib
+matplotlib
 tqdm
 # moviepy
 # noisereduce

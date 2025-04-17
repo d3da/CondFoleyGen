@@ -17,8 +17,9 @@ def instantiate_from_config(config):
     if 'checkpoint' in config:
         if 'params' in config:
             print(f'Warning: params for {config.target} are ignored')
-        print(f'Loading {config.target} from {config.checkpoint}')
-        return get_obj_from_str(config['target']).load_from_checkpoint(config['checkpoint'])
+        kwargs = config.get('kwargs', dict())
+        print(f'Loading {config.target} from {config.checkpoint} with {kwargs}')
+        return get_obj_from_str(config['target']).load_from_checkpoint(config['checkpoint'], **kwargs)
 
     if 'params' in config:
         return get_obj_from_str(config['target'])(**config.get('params', dict()))
