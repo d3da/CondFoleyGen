@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from utils import instantiate_from_config
 
 
-class DecoderTraining(pl.LightningModule):
+class DecoderTrainingAlignedAudio(pl.LightningModule):
     def __init__(self,
                  decoder_config,
                  encoder_config,
@@ -74,15 +74,92 @@ class DecoderTraining(pl.LightningModule):
         #     if not, definitely calculate the overlapping-only loss as a metric
         return loss
 
-    def training_step(self, batch, *args, **kwargs):
+    def training_step(self, batch, batch_idx, *args, **kwargs):
         loss = self.shared_step(batch, 'train')
         return loss
 
-    def validation_step(self, batch, *args, **kwargs):
+    def validation_step(self, batch, batch_idx, *args, **kwargs):
         loss = self.shared_step(batch, 'validation')
         self.log('hp_metric', loss, batch_size=1)
         return loss
 
-    def test_step(self, batch, *args, **kwargs):
+    def test_step(self, batch, batch_idx, *args, **kwargs):
         loss = self.shared_step(batch, 'test')
         return loss
+ 
+
+class DecoderTrainingStandardAudio(pl.LightningModule):
+    def __init__(self, *, decoder_config, encoder_config, optim_learn_rate, optim_weight_decay):
+        super().__init__()
+        self.encoder_model = instantiate_from_config(encoder_config)
+        self.decoder_model = instantiate_from_config(decoder_config)
+        self.optim_learn_rate = optim_learn_rate
+        self.optim_weight_decay = optim_weight_decay
+
+        self.save_hyperparameters()
+
+    def configure_optimizers(self):
+        m = self.trainer.model
+        params = (p for p in m.decoder_model.parameters()
+                  if p.requires_grad)
+        optimizer = torch.optim.Adam(params,
+                                     lr=self.optim_learn_rate,
+                                     weight_decay=self.optim_weight_decay)
+        return {'optimizer': optimizer}
+
+    def shared_step(self, batch, log_prefix, batch_idx):
+        unshifted_audio_emb = []
+        unshifted_spectrogram = []
+        for clip_dict in batch:
+            embeddings_dict = self.encoder_model(clip_dict)
+            if embeddings_dict is None:
+                continue
+            unshifted_audio_emb.append(embeddings_dict['unshifted_audio'])
+            unshifted_spectrogram.append(embeddings_dict['unshifted_spectrogram'])
+
+        if len(unshifted_audio_emb) == 0:
+            return None
+
+        batch_size = len(unshifted_audio_emb)
+        assert batch_size == len(unshifted_spectrogram)
+
+        unshifted_audio_emb = torch.stack(unshifted_audio_emb)
+        unshifted_spectrogram = torch.stack(unshifted_spectrogram)
+
+        generated_spectrogram = self.decoder_model(unshifted_audio_emb)
+
+        downsample_size = (64, 16)
+        generated_spectrogram = F.interpolate(generated_spectrogram.unsqueeze(1), downsample_size, mode='bilinear').squeeze(1)
+        unshifted_spectrogram = F.interpolate(unshifted_spectrogram.unsqueeze(1), downsample_size, mode='bilinear').squeeze(1)
+
+        loss = F.mse_loss(generated_spectrogram, unshifted_spectrogram)
+        self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=batch_size)
+
+        if batch_idx % 50 == 0:
+            self.log_image(unshifted_spectrogram, generated_spectrogram, log_prefix, batch_idx)
+
+        return loss
+
+    def log_image(self, unshifted_spectrogram, generated_spectrogram, log_prefix, step):
+        if not self.logger.__class__.__name__ == 'WandbLogger':
+            return
+        self.logger.log_image(key=f'{log_prefix}/spec',
+                              images=[unshifted_spectrogram[0].T, generated_spectrogram[0].T],
+                              caption=['Ground-Truth', 'Predicted'],
+                              step=self.trainer.global_step)
+        #self.logger.log_image(key=f'{log_prefix}/output', images=[generated_spectrogram[0].T], caption=['Predicted Spectrogram'], step=self.trainer.global_step)
+        
+
+    def training_step(self, batch, batch_idx, *args, **kwargs):
+        loss = self.shared_step(batch, 'train', batch_idx)
+        return loss
+
+    def validation_step(self, batch, batch_idx, *args, **kwargs):
+        loss = self.shared_step(batch, 'validation', batch_idx)
+        self.log('hp_metric', loss, batch_size=1)
+        return loss
+
+    def test_step(self, batch, batch_idx, *args, **kwargs):
+        loss = self.shared_step(batch, 'test', batch_idx)
+        return loss
+ 
