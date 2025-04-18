@@ -80,7 +80,7 @@ class DecoderTraining(pl.LightningModule):
 
     def validation_step(self, batch, *args, **kwargs):
         loss = self.shared_step(batch, 'validation')
-        self.log('hp_metric', loss)
+        self.log('hp_metric', loss, batch_size=1)
         return loss
 
     def test_step(self, batch, *args, **kwargs):

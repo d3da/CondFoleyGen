@@ -110,16 +110,16 @@ class Decoder(nn.Module):
         # x: B, 1024, 1, 1024
         x = self.spatial_upsampling(x)
         # x: B, 8, 128, 1024
-        x = F.interpolate(x, size=(112, 825), mode='bilinear', align_corners=False)
-        # x: B, 8, 112, 825
+        x = F.interpolate(x, size=(112, 799), mode='bilinear', align_corners=False)
+        # x: B, 8, 112, 799
         x = self.conv2d(x)
-        # x: B, 1, 112, 825
+        # x: B, 1, 112, 799
         x = torch.sigmoid(x)
         x = x.squeeze(-3).transpose(-2, -1)
-        # x: B, 825, 112
+        # x: B, 799, 112
         return x
 
 if __name__ == '__main__':
     x = torch.randn((16, 30, 768))
     d = Decoder()
-    print(d(x).shape)  # outputs (16, 825, 112)
+    print(d(x).shape)  # outputs (16, 799, 112)

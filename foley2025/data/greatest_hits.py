@@ -608,6 +608,7 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
 
 
     def random_shifted_sequence(self, original_sequence_length):
+        # Try shifting by a random amount
         shift = random.randint(self.min_shift, self.max_shift)
 
         remaining = original_sequence_length - shift
@@ -617,15 +618,26 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
             #print(f'Warning: Random sequence of length {new_sequence_length} is too short.')
             raise SequenceTooShortError()
 
+        # Shifting with A starting from 0, B starting from shift
         start_a, end_a = 0, new_sequence_length
         start_b, end_b = shift, new_sequence_length + shift
 
-        absolute_shift = random.randint(0, original_sequence_length - new_sequence_length - shift - 1)
+        # Shift A and B by a random 'absolute shift' amount to cover the whole sequence
+        max_abs_shift = original_sequence_length - new_sequence_length - shift
+        if self.return_full_mel_spec:
+            # This fixes an issue with spectrograms being slightly shorter at the end of a file somehow
+            max_abs_shift -= 1  
+
+        if max_abs_shift < 0:
+            raise SequenceTooShortError()
+
+        absolute_shift = random.randint(0, max_abs_shift)
         # absolute_shift = 0
 
         start_a, end_a = start_a + absolute_shift, end_a + absolute_shift
         start_b, end_b = start_b + absolute_shift, end_b + absolute_shift
 
+        # Randomly return (A, B) or (B, A)
         if bool(random.getrandbits(1)):
             return (start_a, end_a), (start_b, end_b)
         else:
@@ -656,14 +668,13 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
         if self.return_full_mel_spec:
             audio_file = path['audio_path']
             orig_start_time, _ = start_end_times[orig_start]
-            _, orig_end_time = start_end_times[orig_end]
+            _, orig_end_time = start_end_times[orig_end - 1]
             shifted_start_time, _ = start_end_times[shifted_start]
-            _, shifted_end_time = start_end_times[shifted_end]
+            _, shifted_end_time = start_end_times[shifted_end - 1]
             unshifted_spectrogram = self.process_full_mel_spectrogram(audio_file, orig_start_time, orig_end_time) \
                 .to(device=self.device)
             shifted_spectrogram = self.process_full_mel_spectrogram(audio_file, shifted_start_time, shifted_end_time) \
                 .to(device=self.device)
-            # self._plot_mel_spec_single(unshifted_spectrogram, path['clip'], orig_start_time, orig_end_time)
 
         return {
             'unshifted_video': orig_video_embeddings,
