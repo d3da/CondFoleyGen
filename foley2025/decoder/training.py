@@ -6,7 +6,7 @@ from utils import instantiate_from_config
 
 
 class DecoderTrainingAlignedAudio(pl.LightningModule):
-    def __init__(self,
+    def __init__(self, *,
                  decoder_config,
                  encoder_config,
                  audio_tcc_model_config,
@@ -36,10 +36,9 @@ class DecoderTrainingAlignedAudio(pl.LightningModule):
                                      weight_decay=self.optim_weight_decay)
         return {'optimizer': optimizer}
 
-    def shared_step(self, batch, log_prefix):
-        audio_embeddings, video_embeddings = [], []
-        _shifted_video = []
-        _unshifted_audio = []
+    def shared_step(self, batch, log_prefix, batch_idx):
+        audio_embeddings = []
+        video_embeddings = []
         unshifted_spectrogram = []
         for clip_dict in batch:
             embeddings_dict = self.encoder_model(clip_dict)
@@ -47,21 +46,16 @@ class DecoderTrainingAlignedAudio(pl.LightningModule):
                 continue
             audio_embeddings.append(embeddings_dict['shifted_audio'])
             video_embeddings.append(embeddings_dict['unshifted_video'])
-            _shifted_video.append(embeddings_dict['shifted_video'])
-            _unshifted_audio.append(embeddings_dict['unshifted_audio'])
-
             unshifted_spectrogram.append(embeddings_dict['unshifted_spectrogram'])
 
         if len(audio_embeddings) == 0 or len(video_embeddings) == 0:
             return None
 
         batch_size = len(audio_embeddings)
-        assert batch_size == len(video_embeddings) == len(_shifted_video) == len(_unshifted_audio)
+        assert batch_size == len(video_embeddings) == len(unshifted_spectrogram)
 
         audio_embeddings = torch.stack(audio_embeddings)
         video_embeddings = torch.stack(video_embeddings)
-        _shifted_video = torch.stack(_shifted_video)
-        _unshifted_audio = torch.stack(_unshifted_audio)
         unshifted_spectrogram = torch.stack(unshifted_spectrogram)
 
         tcc_audio_emb = self.audio_tcc_model(audio_embeddings)
@@ -72,19 +66,30 @@ class DecoderTrainingAlignedAudio(pl.LightningModule):
         self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=batch_size)
         #TODO consider only the overlapping part of the image? Or maybe don't...
         #     if not, definitely calculate the overlapping-only loss as a metric
+        if batch_idx % 50 == 0:
+            self.log_image(unshifted_spectrogram, generated_spectrogram, log_prefix, batch_idx)
+
         return loss
 
+    def log_image(self, unshifted_spectrogram, generated_spectrogram, log_prefix, step):
+        if not self.logger.__class__.__name__ == 'WandbLogger':
+            return
+        self.logger.log_image(key=f'{log_prefix}/spec',
+                              images=[unshifted_spectrogram[0].T, generated_spectrogram[0].T],
+                              caption=['Ground-Truth', 'Predicted'],
+                              step=self.trainer.global_step)
+
     def training_step(self, batch, batch_idx, *args, **kwargs):
-        loss = self.shared_step(batch, 'train')
+        loss = self.shared_step(batch, 'train', batch_idx)
         return loss
 
     def validation_step(self, batch, batch_idx, *args, **kwargs):
-        loss = self.shared_step(batch, 'validation')
+        loss = self.shared_step(batch, 'validation', batch_idx)
         self.log('hp_metric', loss, batch_size=1)
         return loss
 
     def test_step(self, batch, batch_idx, *args, **kwargs):
-        loss = self.shared_step(batch, 'test')
+        loss = self.shared_step(batch, 'test', batch_idx)
         return loss
  
 
