@@ -185,6 +185,7 @@ class Decoder(nn.Module):
 
         self.final_layer = nn.Sequential(
             nn.Conv2d(64, 1, kernel_size=(3, 3), stride=1, padding=1),
+            nn.Tanh(),
         )
 
 

@@ -676,6 +676,13 @@ class GreatestHitEmbeddingSequence(pl.LightningModule):
             shifted_spectrogram = self.process_full_mel_spectrogram(audio_file, shifted_start_time, shifted_end_time) \
                 .to(device=self.device)
 
+            # Normalization based on dataset min() and max() values
+            # min() maps to -0.95 and max() maps to 0.95
+            norm_a = 0.074
+            norm_b = 0.2375
+            shifted_spectrogram = norm_a * shifted_spectrogram + norm_b
+            unshifted_spectrogram = norm_a * unshifted_spectrogram + norm_b
+
         return {
             'unshifted_video': orig_video_embeddings,
             'unshifted_audio': orig_audio_embeddings,
