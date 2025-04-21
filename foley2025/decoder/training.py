@@ -128,10 +128,6 @@ class DecoderTrainingStandardAudio(pl.LightningModule):
 
         generated_spectrogram = self.decoder_model(unshifted_audio_emb)
 
-        downsample_size = (64, 16)
-        generated_spectrogram = F.interpolate(generated_spectrogram.unsqueeze(1), downsample_size, mode='bilinear').squeeze(1)
-        unshifted_spectrogram = F.interpolate(unshifted_spectrogram.unsqueeze(1), downsample_size, mode='bilinear').squeeze(1)
-
         loss = F.mse_loss(generated_spectrogram, unshifted_spectrogram)
         self.log(f'{log_prefix}/loss', loss, prog_bar=True, on_step=True, batch_size=batch_size)
 
@@ -147,7 +143,6 @@ class DecoderTrainingStandardAudio(pl.LightningModule):
                               images=[unshifted_spectrogram[0].T, generated_spectrogram[0].T],
                               caption=['Ground-Truth', 'Predicted'],
                               step=self.trainer.global_step)
-        #self.logger.log_image(key=f'{log_prefix}/output', images=[generated_spectrogram[0].T], caption=['Predicted Spectrogram'], step=self.trainer.global_step)
         
 
     def training_step(self, batch, batch_idx, *args, **kwargs):
