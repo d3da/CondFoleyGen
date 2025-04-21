@@ -3,25 +3,59 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class UpscaleResidualImage1d(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+
+        if in_channels != out_channels:
+            self.channel_conv = nn.Conv1d(in_channels, out_channels,
+                                          kernel_size=1, stride=1, padding=0)
+        else:
+            self.channel_conv = nn.Identity()
+
+        self.upscale_image = lambda x: F.interpolate(x, scale_factor=2)
+        self.norm = nn.BatchNorm1d(out_channels)
+
+    def forward(self, x):
+        x = self.channel_conv(x)
+        x = self.upscale_image(x)
+        x = self.norm(x)
+        return x
+
+class UpscaleHeightResidualImage2d(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+
+        if in_channels != out_channels:
+            self.channel_conv = nn.Conv2d(in_channels, out_channels,
+                                          kernel_size=1, stride=1, padding=0)
+        else:
+            self.channel_conv = nn.Identity()
+
+        self.upscale_image = lambda x: F.interpolate(x, scale_factor=(2, 1))
+        self.norm = nn.BatchNorm2d(out_channels)
+
+    def forward(self, x):
+        x = self.channel_conv(x)
+        x = self.upscale_image(x)
+        x = self.norm(x)
+        return x
+
+
 class ResidualUpsampling1d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=5, stride=2):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv1d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm1d(in_channels),
             nn.SiLU(),
             nn.ConvTranspose1d(in_channels, out_channels,
-                               kernel_size=kernel_size, stride=stride,
+                               kernel_size=5, stride=2,
                                padding=2, output_padding=1),
             nn.BatchNorm1d(out_channels),
             nn.SiLU(),
         )
-        self.residual = nn.Sequential(
-            nn.ConvTranspose1d(in_channels, out_channels,
-                               kernel_size=1, stride=stride,
-                               output_padding=1),
-            nn.BatchNorm1d(out_channels)
-        )
+        self.residual = UpscaleResidualImage1d(in_channels, out_channels)
 
     def forward(self, x):
         return self.conv(x) + self.residual(x)
@@ -41,12 +75,7 @@ class ResidualHeightUpsampling2d(nn.Module):
             nn.BatchNorm2d(out_channels),
             nn.SiLU(),
         )
-        self.residual = nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels,
-                               kernel_size=1, stride=(2, 1),
-                               output_padding=(1, 0)),
-            nn.BatchNorm2d(out_channels)
-        )
+        self.residual = UpscaleHeightResidualImage2d(in_channels, out_channels)
 
     def forward(self, x):
         return self.conv(x) + self.residual(x)
@@ -97,6 +126,8 @@ class ResidualConv1d(nn.Module):
     def forward(self, x):
         # x: (B, C_in, H, W)
         return self.conv(x) + self.residual(x)
+
+
 class Decoder(nn.Module):
     def __init__(self):
         super().__init__()
@@ -104,44 +135,56 @@ class Decoder(nn.Module):
         self.input_padding = nn.ConstantPad1d((1, 1), 0)  # L: 30 -> 32
 
         self.temporal_upsampling = nn.Sequential(
-            ResidualConv1d(in_channels=768, out_channels=768),
             ResidualConv1d(768, 1024),
-            ResidualUpsampling1d(in_channels=1024, out_channels=1024),  # L: 32 -> 64
-            ResidualConv1d(1024, 1024),
-            ResidualUpsampling1d(in_channels=1024, out_channels=1024),  # L: 64 -> 128
-            ResidualConv1d(1024, 1024),
-            ResidualUpsampling1d(in_channels=1024, out_channels=1024),  # L: 128 -> 256
-            ResidualConv1d(1024, 1024),
-            ResidualUpsampling1d(in_channels=1024, out_channels=1024),  # L: 256 -> 512
-            ResidualConv1d(1024, 1024),
-            ResidualUpsampling1d(in_channels=1024, out_channels=1024),  # L: 512 -> 1024
-            ResidualConv1d(1024, 1024),
+            ResidualUpsampling1d(1024, 1024),  # L: 32 -> 64
+            #ResidualConv1d(1024, 1024),
+            ResidualUpsampling1d(1024, 1024),  # L: 64 -> 128
+            #ResidualConv1d(1024, 1024),
+            ResidualUpsampling1d(1024, 1024),  # L: 128 -> 256
+            #ResidualConv1d(1024, 1024),
+            ResidualUpsampling1d(1024, 1024),  # L: 256 -> 512
+            #ResidualConv1d(1024, 1024),
+            ResidualUpsampling1d(1024, 1024),  # L: 512 -> 1024
             ResidualConv1d(1024, 1024),
         )
 
         self.spatial_upsampling = nn.Sequential(
             ResidualConv2d(1024, 1024),
-            ResidualHeightUpsampling2d(in_channels=1024, out_channels=512), # H: 1 -> 2
+            ResidualHeightUpsampling2d(1024, 512), # H: 1 -> 2
             ResidualConv2d(512, 512),
-            ResidualHeightUpsampling2d(in_channels=512, out_channels=256), # H: 2 -> 4
+            ResidualHeightUpsampling2d(512, 256), # H: 2 -> 4
             ResidualConv2d(256, 256),
-            ResidualHeightUpsampling2d(in_channels=256, out_channels=128), # H: 4 -> 8
+            ResidualHeightUpsampling2d(256, 128), # H: 4 -> 8
             ResidualConv2d(128, 128),
-            ResidualHeightUpsampling2d(in_channels=128, out_channels=64),  # H: 8 -> 16
+            ResidualHeightUpsampling2d(128, 64),  # H: 8 -> 16
             ResidualConv2d(64, 64),
-            ResidualHeightUpsampling2d(in_channels=64, out_channels=32),  # H: 16 -> 32
-            ResidualConv2d(32, 32),
-            ResidualHeightUpsampling2d(in_channels=32, out_channels=16),  # H: 32 -> 64
-            ResidualConv2d(16, 16),
-            ResidualHeightUpsampling2d(in_channels=16, out_channels=8),   # H: 64 -> 128
-            ResidualConv2d(8, 8),
+            ResidualHeightUpsampling2d(64, 64),  # H: 16 -> 32
+            ResidualConv2d(64, 64),
+            ResidualHeightUpsampling2d(64, 64),  # H: 32 -> 64
+            ResidualConv2d(64, 64),
+            ResidualHeightUpsampling2d(64, 64),  # H: 64 -> 128
+            ResidualConv2d(64, 64),
+            #ResidualHeightUpsampling2d(64, 32),  # H: 16 -> 32
+            #ResidualConv2d(32, 32),
+            #ResidualHeightUpsampling2d(32, 16),  # H: 32 -> 64
+            #ResidualConv2d(16, 16),
+            #ResidualHeightUpsampling2d(16, 8),   # H: 64 -> 128
+            #ResidualConv2d(8, 8),
         )
 
         self.conv2d = nn.Sequential(
-            ResidualConv2d(in_channels=8, out_channels=8),
-            ResidualConv2d(in_channels=8, out_channels=4),
-            ResidualConv2d(in_channels=4, out_channels=2),
-            ResidualConv2d(in_channels=2, out_channels=1),
+            ResidualConv2d(64, 64),
+            ResidualConv2d(64, 64),
+            ResidualConv2d(64, 64),
+            ResidualConv2d(64, 64),
+            #ResidualConv2d(8, 8),
+            #ResidualConv2d(8, 4),
+            #ResidualConv2d(4, 2),
+            #ResidualConv2d(2, 1),
+        )
+
+        self.final_layer = nn.Sequential(
+            nn.Conv2d(64, 1, kernel_size=(3, 3), stride=1, padding=1),
         )
 
 
@@ -157,12 +200,13 @@ class Decoder(nn.Module):
         x = x.unsqueeze(-2)
         # x: B, 1024, 1, 1024
         x = self.spatial_upsampling(x)
-        # x: B, 8, 128, 1024
+        # x: B, 64, 128, 1024
         x = F.interpolate(x, size=(112, 799), mode='bilinear', align_corners=False)
-        # x: B, 8, 112, 799
+        # x: B, 64, 112, 799
         x = self.conv2d(x)
+        # x: B, 64, 112, 799
+        x = self.final_layer(x)
         # x: B, 1, 112, 799
-        x = torch.sigmoid(x)
         x = x.squeeze(-3).transpose(-2, -1)
         # x: B, 799, 112
         return x
