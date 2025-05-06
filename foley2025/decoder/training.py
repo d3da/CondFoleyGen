@@ -59,7 +59,9 @@ class DecoderTrainingAlignedAudio(pl.LightningModule):
         unshifted_spectrogram = torch.stack(unshifted_spectrogram)
 
         tcc_audio_emb = self.audio_tcc_model(audio_embeddings)
-        aligned_audio_emb = self.alignment_procedure(tcc_audio_emb, video_embeddings)
+        aligned_audio_emb = self.alignment_procedure(tcc_audio_emb,
+                                                     video_embeddings,
+                                                     audio_embeddings)
 
         generated_spectrogram = self.decoder_model(aligned_audio_emb)
         loss = F.mse_loss(generated_spectrogram, unshifted_spectrogram)

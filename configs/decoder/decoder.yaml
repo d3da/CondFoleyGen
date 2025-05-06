@@ -32,6 +32,7 @@ model:
     #  params:
     #    softmax_temperature: 0.1
     #    conf_similarity_str: 'cosine'
+    #    align_original_audio: True
 
     decoder_config:
       target: foley2025.decoder.model.Decoder

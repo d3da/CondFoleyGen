@@ -82,8 +82,10 @@ class TemporalAlignmentLearning(pl.LightningModule):
 
         self.calculate_additional_metrics_tcc(log_prefix, batch_size, tcc_audio_emb, _shifted_video)
 
-        # Compute explicit alignment of tcc embeddings to video
-        aligned_audio_emb = self.alignment_procedure(tcc_audio_emb, video_embeddings)
+        # Compute explicit alignment of audio embeddings to video
+        aligned_audio_emb = self.alignment_procedure(tcc_audio_emb,
+                                                     video_embeddings,
+                                                     audio_embeddings)
 
         # Metrics calculated between aligned audio embedding and unshifted audio embeddings
         # align_mse_loss = F.mse_loss(aligned_audio_emb, _unshifted_audio)

@@ -41,12 +41,12 @@ model:
       params:
         tcc_lambda: 0.05
         softmax_temperature: 0.1
-        similarity_fn: 'negative-euclidean'
+        similarity_fn: 'cosine'
 #      target: foley2025.temporal.loss.GTCCLoss
 #      params:
 #        similarity_fn: 'negative-euclidean'
-#        n_components: 10
-#        lbfgs_max_iters: 50
+#        n_components: 5
+#        lbfgs_max_iters: 100
 #        lbfgs_lr: 0.5
 #        tcc_lambda: 0.05
 #        window_ratio: 0.25
@@ -78,9 +78,9 @@ model:
       params:
         softmax_temperature: 0.1
         conf_similarity_str: 'cosine'
+        align_original_audio: True
 
     optim_learn_rate: 1e-6
-    #optim_weight_decay: 1e-9
     optim_weight_decay: 0.0
 
 data:
