@@ -77,15 +77,19 @@ class TemporalAlignmentLearning(pl.LightningModule):
         self.log(f'{log_prefix}/tcc_loss', tcc_loss, prog_bar=True, on_step=True, batch_size=batch_size)
 
 
-        frobenius_norm = torch.linalg.matrix_norm(tcc_audio_emb)
-        self.log(f'{log_prefix}/tcc_frobenius_norm', frobenius_norm.mean(), prog_bar=False, on_step=True, batch_size=batch_size)
+        # frobenius_norm = torch.linalg.matrix_norm(tcc_audio_emb)
+        # self.log(f'{log_prefix}/tcc_frobenius_norm', frobenius_norm.mean(), prog_bar=False, on_step=True, batch_size=batch_size)
 
         self.calculate_additional_metrics_tcc(log_prefix, batch_size, tcc_audio_emb, _shifted_video)
 
         # Compute explicit alignment of audio embeddings to video
-        aligned_audio_emb = self.alignment_procedure(tcc_audio_emb,
-                                                     video_embeddings,
-                                                     audio_embeddings)
+        aligned_audio_emb, alphas = self.alignment_procedure(tcc_audio_emb,
+                                                             video_embeddings,
+                                                             audio_embeddings,
+                                                             return_alphas=True)
+
+        # Visualize alpha matrix
+        self.visualize_alphas(alphas)
 
         # Metrics calculated between aligned audio embedding and unshifted audio embeddings
         # align_mse_loss = F.mse_loss(aligned_audio_emb, _unshifted_audio)
@@ -124,5 +128,15 @@ class TemporalAlignmentLearning(pl.LightningModule):
     def test_step(self, batch, *args, **kwargs):
         loss = self.shared_step(batch, 'test')
         return loss
+
+    def visualize_alphas(self, alphas, log_prefix):
+        if not self.logger.__class__.__name__ == 'WandbLogger':
+            return
+
+        image = alphas[0]
+        self.logger.log_image(key=f'{log_prefix}/sim_matrix',
+                              images=[image],
+                              caption=['Alpha'],
+                              step=self.trainer.global_step)
 
 

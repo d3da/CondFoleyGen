@@ -17,7 +17,8 @@ class AlignFunction(torch.nn.Module):
     def forward(self,
                 tcc_audio_embeddings,  # .. x a_length x dimension
                 video_embeddings,  # .. x v_length x dimension
-                orig_audio_embeddings=None):  # .. x a_length x dimension
+                orig_audio_embeddings=None,  # .. x a_length x dimension
+                return_alphas=False):
         assert tcc_audio_embeddings.shape[-1] == video_embeddings.shape[-1]
 
         sim_matrix = self.similarity_fn(tcc_audio_embeddings, video_embeddings)  # .. x L_a x L_v
@@ -34,6 +35,9 @@ class AlignFunction(torch.nn.Module):
             audio_emb_broadcast = tcc_audio_embeddings.unsqueeze(-2)  # .. x L_a x 1 x dim
 
         aligned_audio = audio_emb_broadcast.mul(sim_broadcast).sum(dim=-2)  # .. x L_v x dim
+
+        if return_alphas:
+            return aligned_audio, sim_weights
         return aligned_audio
 
 
