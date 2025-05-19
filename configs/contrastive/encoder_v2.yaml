@@ -1,0 +1,45 @@
+model:
+  target: foley2025.contrastive.v2.training.V2EncoderTraining
+  params:
+    data_processing_config:
+      target: foley2025.data.v2.encoder_data.GreatestHitEmbeddingsSequence_Encoder
+      params:
+        segments_per_video: 4
+        segment_duration_frames: 8
+        metadata_path: 'data/info_r2plus1d_dim1024_15fps.json'
+    a_encoder_config:
+      target: foley2025.contrastive.encoder.LB_AudioEncoder_PartiallyFrozen
+      params:
+        n_finetune_layers: 5
+    v_encoder_config:
+      target: foley2025.contrastive.encoder.LB_VideoEncoder_PartiallyFrozen
+      params:
+        n_finetune_layers: 5
+    semantic_loss_config:
+      target: foley2025.contrastive.v2.loss.LabelInfoNCELoss
+      params:
+        softmax_temperature: 1
+    temporal_loss_config:
+      target: foley2025.contrastive.v2.loss.TemporalInfoNCELoss
+      params:
+        softmax_temperature: 1
+
+    label_embeddings_path: 'data/GH_label_embeddings_v2.pt'
+    optim_learn_rate: 1e-6
+    optim_weight_decay: 1e-8
+
+
+
+data:
+  target: foley2025.data.greatest_hits.GreatestHitFullClipsDataModule
+  params:
+    batch_size: 2
+    num_workers: 0
+    shuffle_every_epoch: True
+    splits_path: data
+    data_path: '/workspace/vis-data'
+
+wandb:
+  name: "v2Encoder_0.0_test"
+  notes: "Contrastive training of encoder with improved clip length and added temporal contrastive objective"
+
