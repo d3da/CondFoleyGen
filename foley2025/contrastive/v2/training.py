@@ -42,7 +42,7 @@ class V2EncoderTraining(pl.LightningModule):
         return optimizer
 
 
-    def shared_step(self, batch, log_prefix):
+    def shared_step(self, batch, log_prefix, batch_idx):
         batch_size, num_segments, *video_shape = batch['video_data'].shape
         assert batch_size == batch['audio_data'].shape[0]
         assert num_segments == batch['audio_data'].shape[1]
@@ -68,21 +68,32 @@ class V2EncoderTraining(pl.LightningModule):
                                              self.label_embeddings)
         self.log(f'{log_prefix}/video_semantic_loss', a_semantic_loss, on_step=True, prog_bar=True, batch_size=1)
 
-        temporal_loss = self.temporal_loss(audio_embeddings_per_clip, video_embeddings_per_clip)
+        temporal_loss, sim_matrix = self.temporal_loss(audio_embeddings_per_clip, video_embeddings_per_clip)
         self.log(f'{log_prefix}/temporal_loss', temporal_loss, on_step=True, prog_bar=True, batch_size=1)
+
+        if batch_idx % 10 == 0:
+            self.log_image(sim_matrix, log_prefix)
 
         combined_loss = a_semantic_loss + v_semantic_loss + temporal_loss
         return combined_loss, batch_size
 
     def training_step(self, batch, batch_idx):
-        loss, batch_size = self.shared_step(batch, 'train')
+        loss, batch_size = self.shared_step(batch, 'train', batch_idx)
         return loss
 
-    def validation_step(self, batch, *args, **kwargs):
-        loss, batch_size = self.shared_step(batch, 'validation')
+    def validation_step(self, batch, batch_idx):
+        loss, batch_size = self.shared_step(batch, 'validation', batch_idx)
         self.log('hp_metric', loss, batch_size=1)
         return loss
 
-    def test_step(self, batch, *args, **kwargs):
-        loss, batch_size = self.shared_step(batch, 'test')
+    def test_step(self, batch, batch_idx):
+        loss, batch_size = self.shared_step(batch, 'test', batch_idx)
         return loss
+
+    def log_image(self, sim_matrix, log_prefix):
+        if not self.logger.__class__.__name__ == 'WandbLogger':
+            return
+        self.logger.log_image(key=f'{log_prefix}/temporal_similarity',
+                              images=[sim_matrix[0]],
+                              caption=['Audio/Video Similarity over timesteps'],
+                              step=self.trainer.global_step)

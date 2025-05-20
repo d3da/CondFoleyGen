@@ -49,4 +49,4 @@ class TemporalInfoNCELoss(torch.nn.Module):
 
         audio_loss = -audio_prob_logits.mul(identity).sum(dim=-1).sum(dim=-1).mean()
         video_loss = -video_prob_logits.mul(identity).sum(dim=-1).sum(dim=-1).mean()
-        return audio_loss + video_loss
+        return audio_loss + video_loss, sim_matrix
