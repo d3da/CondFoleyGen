@@ -23,8 +23,8 @@ class LabelInfoNCELoss(torch.nn.Module):
                                     num_classes=label_embeddings.shape[0])
         # B x L
 
-        loss = -prob_logits.mul(classes_one_hot).sum(dim=1)  # B
-        return loss.mean()
+        loss = -prob_logits.mul(classes_one_hot).sum(dim=1).mean()
+        return loss
 
 
 class TemporalInfoNCELoss(torch.nn.Module):
@@ -47,6 +47,6 @@ class TemporalInfoNCELoss(torch.nn.Module):
         audio_prob_logits = F.log_softmax(sim_matrix, dim=2)
         video_prob_logits = F.log_softmax(sim_matrix, dim=1)
 
-        audio_loss = -audio_prob_logits.mul(identity).sum()
-        video_loss = -video_prob_logits.mul(identity).sum()
+        audio_loss = -audio_prob_logits.mul(identity).sum(dim=-1).sum(dim=-1).mean()
+        video_loss = -video_prob_logits.mul(identity).sum(dim=-1).sum(dim=-1).mean()
         return audio_loss + video_loss

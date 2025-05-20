@@ -61,15 +61,15 @@ class V2EncoderTraining(pl.LightningModule):
         a_semantic_loss = self.semantic_loss(all_audio_embeddings,
                                            hit_class_nums_reshaped,
                                            self.label_embeddings)
-        self.log(f'{log_prefix}/audio_semantic_loss', a_semantic_loss, on_step=True, prog_bar=True, batch_size=batch_size)
+        self.log(f'{log_prefix}/audio_semantic_loss', a_semantic_loss, on_step=True, prog_bar=True, batch_size=1)
 
         v_semantic_loss = self.semantic_loss(all_video_embeddings,
                                              hit_class_nums_reshaped,
                                              self.label_embeddings)
-        self.log(f'{log_prefix}/video_semantic_loss', a_semantic_loss, on_step=True, prog_bar=True, batch_size=batch_size)
+        self.log(f'{log_prefix}/video_semantic_loss', a_semantic_loss, on_step=True, prog_bar=True, batch_size=1)
 
         temporal_loss = self.temporal_loss(audio_embeddings_per_clip, video_embeddings_per_clip)
-        self.log(f'{log_prefix}/temporal_loss', temporal_loss, on_step=True, prog_bar=True, batch_size=batch_size)
+        self.log(f'{log_prefix}/temporal_loss', temporal_loss, on_step=True, prog_bar=True, batch_size=1)
 
         combined_loss = a_semantic_loss + v_semantic_loss + temporal_loss
         return combined_loss, batch_size
@@ -80,7 +80,7 @@ class V2EncoderTraining(pl.LightningModule):
 
     def validation_step(self, batch, *args, **kwargs):
         loss, batch_size = self.shared_step(batch, 'validation')
-        self.log('hp_metric', loss, batch_size=batch_size)
+        self.log('hp_metric', loss, batch_size=1)
         return loss
 
     def test_step(self, batch, *args, **kwargs):
