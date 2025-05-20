@@ -10,7 +10,6 @@ from utils import instantiate_from_config
 
 class V2EncoderTraining(pl.LightningModule):
     def __init__(self,
-                 data_processing_config,
                  a_encoder_config,
                  v_encoder_config,
                  semantic_loss_config,
@@ -19,7 +18,6 @@ class V2EncoderTraining(pl.LightningModule):
                  optim_learn_rate,
                  optim_weight_decay):
         super().__init__()
-        self.data_processor = instantiate_from_config(data_processing_config)
         self.a_encoder = instantiate_from_config(a_encoder_config)
         self.v_encoder = instantiate_from_config(v_encoder_config)
         self.semantic_loss = instantiate_from_config(semantic_loss_config)
@@ -45,16 +43,14 @@ class V2EncoderTraining(pl.LightningModule):
 
 
     def shared_step(self, batch, log_prefix):
-        processed_batch = self.data_processor(batch)
+        batch_size, num_segments, *video_shape = batch['video_data'].shape
+        assert batch_size == batch['audio_data'].shape[0]
+        assert num_segments == batch['audio_data'].shape[1]
+        batch_size, num_segments, *audio_shape = batch['audio_data'].shape
 
-        batch_size, num_segments, *video_shape = processed_batch['video_data'].shape
-        assert batch_size == processed_batch['audio_data'].shape[0]
-        assert num_segments == processed_batch['audio_data'].shape[1]
-        batch_size, num_segments, *audio_shape = processed_batch['audio_data'].shape
-
-        audio_data_reshaped = processed_batch['audio_data'].reshape(batch_size * num_segments, *audio_shape)
-        video_data_reshaped = processed_batch['video_data'].reshape(batch_size * num_segments, *video_shape)
-        hit_class_nums_reshaped = processed_batch['hit_class_nums'].reshape(batch_size * num_segments)
+        audio_data_reshaped = batch['audio_data'].reshape(batch_size * num_segments, *audio_shape)
+        video_data_reshaped = batch['video_data'].reshape(batch_size * num_segments, *video_shape)
+        hit_class_nums_reshaped = batch['hit_class_nums'].reshape(batch_size * num_segments)
 
         all_audio_embeddings = self.a_encoder(audio_data_reshaped)
         all_video_embeddings = self.v_encoder(video_data_reshaped)

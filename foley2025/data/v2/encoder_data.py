@@ -1,3 +1,4 @@
+import os
 import tqdm
 import random
 import torch
@@ -41,22 +42,63 @@ def random_ranges(n, k, tot) -> list[tuple[int, int]]:
 
     return starts
 
-class GreatestHitEmbeddingsSequence_Encoder(pl.LightningModule):
+class GreatestHitEmbeddingsSequence_Encoder(torch.utils.data.Dataset):
     def __init__(self,
+                 split,
+                 splits_path,
+                 data_path,
                  segment_duration_frames,
                  metadata_path,
                  segments_per_video):
         super().__init__()
+        self.split = split
+        self.splits_path = splits_path
+        self.data_path = data_path
+        if split == 'val':
+            split = 'valid'
+        split_filepath = os.path.join(splits_path, f'greatesthit_video_{split}.json')
+        with open(split_filepath, 'r') as split_file:
+            self.split_videos = json.load(split_file)
+        self.dataset = None
+        self.init_dataset()
+
         self.segment_duration_frames = segment_duration_frames
 
         self.hit_index = None
         self.hit_class_numbers = None
         self.load_hit_index(metadata_path)
 
-        # self.hit_index = self.load_hit_index(metadata_path)
         self.segments_per_video = segments_per_video
         self._video_preprocessor = None
         self._audio_preprocessor = None
+
+
+    def init_dataset(self):
+        self.dataset = []
+        for clip in self.split_videos:
+            # Test if the files exist
+            video_path, audio_path = self.get_video_path(clip), self.get_audio_path(clip)
+            if not os.path.isfile(video_path):
+                raise FileNotFoundError(f'Error: could not find video at {video_path}')
+            if not os.path.isfile(audio_path):
+                raise FileNotFoundError(f'Error: could not find audio at {audio_path}')
+
+            self.dataset.append({'clip': clip, 'video_path': video_path, 'audio_path': audio_path})
+
+        print(f'Dataset {self.split} contains {len(self.dataset)} videos')
+
+    def get_video_path(self, video):
+        return os.path.join(self.data_path, f'{video}_denoised.mp4')
+
+    def get_audio_path(self, video):
+        return os.path.join(self.data_path, f'{video}_denoised.wav')
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        clip_dict = self.dataset[idx]
+        return self.load_clip_dict(clip_dict)
 
     def load_hit_index(self, metadata_path):
         with open(metadata_path, 'r') as meta_file:
@@ -103,22 +145,6 @@ class GreatestHitEmbeddingsSequence_Encoder(pl.LightningModule):
 
         return self._audio_preprocessor
 
-    def forward(self, batch) -> dict[str, list[torch.Tensor | str]]:
-        data = collections.defaultdict(list)
-        for clip_dict in batch:
-            processed_dict = self.load_clip_dict(clip_dict)
-            for k, v in processed_dict.items():
-                data[k].append(v)
-
-        for k, v in data.items():
-            if 'hit_labels' in k:
-                continue  # This can contain None, and is not used as input to any models.
-
-            data[k] = torch.stack(v, dim=0)
-
-        return data
-
-
     def load_clip_dict(self, clip_dict) -> dict[str, list[torch.Tensor | str | None]]:
         video_data = []
         audio_data = []
@@ -157,7 +183,7 @@ class GreatestHitEmbeddingsSequence_Encoder(pl.LightningModule):
                     frame_rgb = frame.to_rgb().to_ndarray()
                     frame_tensors.append(torch.from_numpy(frame_rgb).permute(2, 0, 1))  # C x H x W
                 end_time = frame.time
-                frame_tensors = torch.stack(frame_tensors, dim=1).to(device=self.device)  # C x T x H x W
+                frame_tensors = torch.stack(frame_tensors, dim=1)
                 video_data.append(self.video_preprocessor.transform(frame_tensors))
 
                 # Process audio
@@ -176,11 +202,77 @@ class GreatestHitEmbeddingsSequence_Encoder(pl.LightningModule):
                     break
 
         return {
-            'video_data': torch.stack(video_data, dim=0).to(device=self.device),
-            'audio_data': torch.stack(audio_data, dim=0).to(device=self.device),
-            'hit_class_nums': torch.tensor(hit_class_nums, device=self.device),
+            'video_data': torch.stack(video_data, dim=0),
+            'audio_data': torch.stack(audio_data, dim=0),
+            'hit_class_nums': torch.tensor(hit_class_nums),
             'hit_labels': hit_labels,
         }
+
+
+class GreatestHitEncoderDataModule(pl.LightningDataModule):
+    def __init__(self,
+                 batch_size,
+                 shuffle_every_epoch,
+                 num_workers,
+                 *args,
+                 **kwargs):
+        super().__init__()
+        self.batch_size = batch_size
+        self.shuffle_every_epoch = shuffle_every_epoch
+        self.num_workers = num_workers
+        self.args = args
+        self.kwargs = kwargs
+
+        self.train_dataset = self.val_dataset = self.test_dataset = None
+
+    def collate_fn(self, batch):
+        data = collections.defaultdict(list)
+        for processed_dict in batch:
+            for k, v in processed_dict.items():
+                data[k].append(v)
+
+        for k, v in data.items():
+            if 'hit_labels' in k:
+                continue  # This can contain None, and is not used as input to any models.
+
+            data[k] = torch.stack(v, dim=0)
+
+        return data
+
+    def prepare_data(self):
+        pass
+
+    def setup(self, stage=None):
+        self.train_dataset = GreatestHitEmbeddingsSequence_Encoder('train',
+                                                                   *self.args,
+                                                                   **self.kwargs)
+        self.val_dataset = GreatestHitEmbeddingsSequence_Encoder('val',
+                                                                   *self.args,
+                                                                   **self.kwargs)
+        self.test_dataset = GreatestHitEmbeddingsSequence_Encoder('test',
+                                                                   *self.args,
+                                                                  **self.kwargs)
+
+    def train_dataloader(self):
+        return torch.utils.data.DataLoader(self.train_dataset,
+                                           batch_size=self.batch_size,
+                                           collate_fn=self.collate_fn,
+                                           shuffle=self.shuffle_every_epoch,
+                                           num_workers=self.num_workers)
+
+    def val_dataloader(self):
+        return torch.utils.data.DataLoader(self.val_dataset,
+                                           batch_size=self.batch_size,
+                                           collate_fn=self.collate_fn,
+                                           shuffle=False,
+                                           num_workers=self.num_workers)
+
+    def test_dataloader(self):
+        return torch.utils.data.DataLoader(self.test_dataset,
+                                           batch_size=self.batch_size,
+                                           collate_fn=self.collate_fn,
+                                           shuffle=False,
+                                           num_workers=self.num_workers)
 
 
 if __name__ == '__main__':

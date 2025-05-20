@@ -1,12 +1,6 @@
 model:
   target: foley2025.contrastive.v2.training.V2EncoderTraining
   params:
-    data_processing_config:
-      target: foley2025.data.v2.encoder_data.GreatestHitEmbeddingsSequence_Encoder
-      params:
-        segments_per_video: 4
-        segment_duration_frames: 8
-        metadata_path: 'data/info_r2plus1d_dim1024_15fps.json'
     a_encoder_config:
       target: foley2025.contrastive.encoder.LB_AudioEncoder_PartiallyFrozen
       params:
@@ -25,19 +19,22 @@ model:
         softmax_temperature: 1
 
     label_embeddings_path: 'data/GH_label_embeddings_v2.pt'
-    optim_learn_rate: 1e-6
-    optim_weight_decay: 1e-8
-
+    optim_learn_rate: 1e-4
+    optim_weight_decay: 1e-6
 
 
 data:
-  target: foley2025.data.greatest_hits.GreatestHitFullClipsDataModule
+  target: foley2025.data.v2.encoder_data.GreatestHitEncoderDataModule
   params:
-    batch_size: 2
-    num_workers: 0
+    batch_size: 32
+    num_workers: 16
     shuffle_every_epoch: True
     splits_path: data
     data_path: '/workspace/vis-data'
+    segments_per_video: 8
+    segment_duration_frames: 8
+    metadata_path: 'data/info_r2plus1d_dim1024_15fps.json'
+
 
 wandb:
   name: "v2Encoder_0.0_test"
@@ -45,5 +42,5 @@ wandb:
 
 
 trainer:
-  accumulate_grad_batches: 32
+  accumulate_grad_batches: 8
   precision: '16-mixed'
