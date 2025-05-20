@@ -18,6 +18,10 @@ def main():
     model = instantiate_from_config(conf.model)
     data = instantiate_from_config(conf.data)
     wandb_conf = conf.wandb
+    if conf.trainer:
+        trainer_args = conf.trainer
+    else:
+        trainer_args = dict()
 
 
     checkpoint_callback = pl.callbacks.ModelCheckpoint(save_top_k=5,
@@ -39,8 +43,8 @@ def main():
                          profiler=profiler,
                          #logger=logger,
                          log_every_n_steps=1,
-                         accumulate_grad_batches=32,
-                         callbacks=[checkpoint_callback])
+                         callbacks=[checkpoint_callback],
+                         **trainer_args)
 
     print('TODO: gradient accumulation')
 

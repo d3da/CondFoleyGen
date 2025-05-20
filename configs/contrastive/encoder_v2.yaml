@@ -43,3 +43,7 @@ wandb:
   name: "v2Encoder_0.0_test"
   notes: "Contrastive training of encoder with improved clip length and added temporal contrastive objective"
 
+
+trainer:
+  accumulate_grad_batches: 32
+  precision: '16-mixed'
