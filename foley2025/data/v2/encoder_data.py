@@ -258,21 +258,24 @@ class GreatestHitEncoderDataModule(pl.LightningDataModule):
                                            batch_size=self.batch_size,
                                            collate_fn=self.collate_fn,
                                            shuffle=self.shuffle_every_epoch,
-                                           num_workers=self.num_workers)
+                                           num_workers=self.num_workers,
+                                           persistent_workers=True)
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(self.val_dataset,
                                            batch_size=self.batch_size,
                                            collate_fn=self.collate_fn,
                                            shuffle=False,
-                                           num_workers=self.num_workers)
+                                           num_workers=self.num_workers,
+                                           persistent_workers=True)
 
     def test_dataloader(self):
         return torch.utils.data.DataLoader(self.test_dataset,
                                            batch_size=self.batch_size,
                                            collate_fn=self.collate_fn,
                                            shuffle=False,
-                                           num_workers=self.num_workers)
+                                           num_workers=self.num_workers,
+                                           persistent_workers=True)
 
 
 if __name__ == '__main__':
