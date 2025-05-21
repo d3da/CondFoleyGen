@@ -97,3 +97,7 @@ class V2EncoderTraining(pl.LightningModule):
                               images=[sim_matrix[0]],
                               caption=['Audio/Video Similarity over timesteps'],
                               step=self.trainer.global_step)
+
+    def forward(self, audio_data, video_data):
+        return self.a_encoder(audio_data), self.v_encoder(video_data)
+
